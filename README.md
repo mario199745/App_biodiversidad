@@ -91,7 +91,15 @@ streamlit run app.py
 
 1. Copia o reemplaza los archivos del proyecto en tu repositorio de GitHub.
 2. Verifica que `app.py`, `requirements.txt`, `runtime.txt`, `.streamlit/config.toml` y la carpeta `data/` estén en la raíz del repositorio.
-3. Sube los cambios:
+3. En Streamlit Community Cloud, entra a **Advanced settings** y selecciona:
+
+```text
+Python version: 3.11
+```
+
+No uses Python 3.14 para esta app. Con Python 3.14 algunas dependencias de Streamlit/Pillow pueden intentar compilarse desde cero y fallar por librerías del sistema.
+
+4. Sube los cambios:
 
 ```powershell
 git add .
@@ -99,7 +107,7 @@ git commit -m "Actualizar app biodiversidad"
 git push origin main
 ```
 
-4. En Streamlit Community Cloud, la app se actualizará al detectar el nuevo `push`. Si modificaste dependencias, puede hacer un redeploy completo.
+5. En Streamlit Community Cloud, la app se actualizará al detectar el nuevo `push`. Si modificaste dependencias o Python, usa **Manage app -> Reboot**.
 
 ## Vistas disponibles
 
@@ -113,5 +121,6 @@ git push origin main
 ## Notas de despliegue
 
 - El repositorio no debe incluir `.git/`, `__pycache__/`, `.venv/` ni archivos `~$*.xlsx`.
+- `runtime.txt` queda como referencia con `python-3.11`, pero la versión efectiva debe configurarse en Streamlit Cloud desde **Advanced settings**.
 - El archivo de entrada actual pesa poco y puede mantenerse dentro del repositorio.
 - Si en el futuro los Excel crecen mucho o contienen información sensible, conviene migrar la data a una base externa o usar secretos/configuración privada.
