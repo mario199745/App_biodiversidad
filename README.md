@@ -23,7 +23,7 @@ La app lee automáticamente todos los archivos `.xlsx` ubicados en `data/`. Cada
 03_Consolidado_Streamlit
 ```
 
-Si esa hoja no existe, la app usará la primera hoja disponible y dejará una observación en el panel de carga.
+Si esa hoja no existe, la app usará la primera hoja disponible.
 
 ## Campos principales esperados
 
@@ -50,7 +50,17 @@ La estructura base es la del consolidado Streamlit generado por el pipeline:
 - `tipo_asignacion`
 - `estado_revision`
 
-La aplicación tolera columnas faltantes, pero las marcará en el panel **Calidad**.
+La aplicación tolera columnas faltantes para mantener disponible la consulta principal.
+
+## Base geográfica
+
+La vista de mapa usa la capa departamental:
+
+```text
+data/GEO/DEP_PERU.geojson
+```
+
+Las coordenadas UTM de los registros se transforman a latitud y longitud para superponer los puntos sobre los departamentos del Perú.
 
 ## Agregar nuevos años
 
@@ -114,8 +124,7 @@ git push origin main
 - Dashboard
 - Estudios
 - Especies
-- Coordenadas
-- Calidad
+- Mapa
 - Descarga
 
 ## Notas de despliegue

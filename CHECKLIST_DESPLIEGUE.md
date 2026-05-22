@@ -5,8 +5,9 @@
 - [ ] Ejecutar localmente: `streamlit run app.py`
 - [ ] Confirmar que el Excel esta en `data/`
 - [ ] Confirmar que la hoja principal se llama `03_Consolidado_Streamlit`
+- [ ] Confirmar que la base departamental esta en `data/GEO/DEP_PERU.geojson`
 - [ ] Confirmar en Streamlit Community Cloud que **Python version** sea `3.11` en **Advanced settings**
-- [ ] Revisar la pestana **Calidad** dentro de la app
+- [ ] Revisar la pestana **Mapa** dentro de la app
 - [ ] No subir `.venv/`, `__pycache__/`, `.git/`, `.env` ni archivos temporales `~$*.xlsx`
 
 ## Comandos Git

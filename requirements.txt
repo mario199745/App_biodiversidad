@@ -3,3 +3,4 @@ pandas==3.0.1
 openpyxl==3.1.5
 plotly==6.7.0
 XlsxWriter==3.2.9
+pyproj==3.7.2

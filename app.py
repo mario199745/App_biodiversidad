@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import re
 import unicodedata
 from pathlib import Path
@@ -9,17 +10,18 @@ from typing import Iterable
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from pyproj import Transformer
 
 
 st.set_page_config(
     page_title="Explorador de fauna por informes mineros",
-    page_icon="🦎",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
+GEOJSON_PATH = DATA_DIR / "GEO" / "DEP_PERU.geojson"
 SHEET_NAME = "03_Consolidado_Streamlit"
 TEMP_PREFIX = "~$"
 
@@ -114,6 +116,7 @@ NUMERIC_COLUMNS = ["anio", "este_fuente_original", "norte_fuente_original"]
 
 COLOR_SEQUENCE = px.colors.qualitative.Set2 + px.colors.qualitative.Bold
 FAUNA_GROUPS = {"anfibios", "artropodos", "aves", "herpetofauna", "mamiferos", "reptiles"}
+PERU_UTM_EPSG_PREFIX = "327"
 
 
 def normalize_colname(name: object) -> str:
@@ -163,7 +166,7 @@ def normalize_dataset(df: pd.DataFrame, file_name: str) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(show_spinner="Leyendo Excel anuales desde data/")
+@st.cache_data(show_spinner=False)
 def load_data(data_dir: str, sheet_name: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     folder = Path(data_dir)
     logs: list[dict[str, object]] = []
@@ -198,6 +201,12 @@ def load_data(data_dir: str, sheet_name: str) -> tuple[pd.DataFrame, pd.DataFram
     return data, pd.DataFrame(logs)
 
 
+@st.cache_data(show_spinner=False)
+def load_departments_geojson(path: str) -> dict:
+    with Path(path).open("r", encoding="utf-8") as file:
+        return json.load(file)
+
+
 def safe_unique_count(df: pd.DataFrame, column: str) -> int:
     if df.empty or column not in df.columns:
         return 0
@@ -210,6 +219,111 @@ def option_values(df: pd.DataFrame, column: str) -> list[str]:
     values = df[column].dropna().astype(str).str.strip()
     values = values[values.ne("")]
     return sorted(values.unique().tolist())
+
+
+def normalize_label(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value).strip().upper())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def parse_utm_zone(value: object) -> int | None:
+    if pd.isna(value):
+        return None
+    match = re.search(r"(17|18|19)", str(value))
+    return int(match.group(1)) if match else None
+
+
+def add_geographic_coordinates(df: pd.DataFrame) -> pd.DataFrame:
+    coord_df = df[df["este_fuente_original"].notna() & df["norte_fuente_original"].notna()].copy()
+    if coord_df.empty:
+        return coord_df
+
+    coord_df["zona_utm_num"] = coord_df["zona_utm_fuente_original"].map(parse_utm_zone)
+    coord_df["longitud"] = pd.NA
+    coord_df["latitud"] = pd.NA
+
+    for zone in sorted(coord_df["zona_utm_num"].dropna().unique()):
+        epsg = f"EPSG:{PERU_UTM_EPSG_PREFIX}{int(zone):02d}"
+        transformer = Transformer.from_crs(epsg, "EPSG:4326", always_xy=True)
+        mask = coord_df["zona_utm_num"].eq(zone)
+        lon, lat = transformer.transform(
+            coord_df.loc[mask, "este_fuente_original"].astype(float).to_numpy(),
+            coord_df.loc[mask, "norte_fuente_original"].astype(float).to_numpy(),
+        )
+        coord_df.loc[mask, "longitud"] = lon
+        coord_df.loc[mask, "latitud"] = lat
+
+    coord_df["longitud"] = pd.to_numeric(coord_df["longitud"], errors="coerce")
+    coord_df["latitud"] = pd.to_numeric(coord_df["latitud"], errors="coerce")
+    return coord_df.dropna(subset=["longitud", "latitud"])
+
+
+def department_count_table(df: pd.DataFrame, geojson: dict) -> pd.DataFrame:
+    departments = [
+        feature["properties"]["DEPARTAMEN"]
+        for feature in geojson.get("features", [])
+        if feature.get("properties", {}).get("DEPARTAMEN")
+    ]
+    base = pd.DataFrame({"departamento_mapa": sorted(departments)})
+
+    counts = df.copy()
+    counts["departamento_mapa"] = counts["departamento_estudio"].map(normalize_label)
+    counts = counts.groupby("departamento_mapa", dropna=False).size().reset_index(name="registros")
+
+    return base.merge(counts, on="departamento_mapa", how="left").fillna({"registros": 0})
+
+
+def build_department_map(filtered: pd.DataFrame, departments_geojson: dict):
+    department_counts = department_count_table(filtered, departments_geojson)
+    fig = px.choropleth(
+        department_counts,
+        geojson=departments_geojson,
+        locations="departamento_mapa",
+        featureidkey="properties.DEPARTAMEN",
+        color="registros",
+        hover_name="departamento_mapa",
+        hover_data={"departamento_mapa": False, "registros": ":,.0f"},
+        color_continuous_scale="Teal",
+        projection="mercator",
+        title="Registros georreferenciados por departamento",
+    )
+
+    coord_df = add_geographic_coordinates(filtered)
+    for idx, (group, group_df) in enumerate(coord_df.groupby("grupo_biologico", dropna=False)):
+        hover_text = (
+            group_df["nombre_cientifico"].fillna("")
+            + "<br>"
+            + group_df["codigo_estudio_limpio"].fillna("")
+            + "<br>"
+            + group_df["departamento_estudio"].fillna("")
+            + " / "
+            + group_df["provincia_estudio"].fillna("")
+        )
+        fig.add_scattergeo(
+            lon=group_df["longitud"],
+            lat=group_df["latitud"],
+            mode="markers",
+            name=str(group) if str(group).strip() else "Sin grupo",
+            text=hover_text,
+            hovertemplate="%{text}<extra></extra>",
+            marker={
+                "size": 7,
+                "opacity": 0.78,
+                "color": COLOR_SEQUENCE[idx % len(COLOR_SEQUENCE)],
+                "line": {"width": 0.6, "color": "#FFFFFF"},
+            },
+        )
+
+    fig.update_geos(fitbounds="locations", visible=False)
+    fig.update_layout(
+        height=640,
+        margin={"l": 0, "r": 0, "t": 56, "b": 0},
+        legend_title_text="Grupo biologico",
+        coloraxis_colorbar={"title": "Registros"},
+    )
+    return fig, coord_df
 
 
 def to_excel_bytes(df: pd.DataFrame, sheet_name: str = "datos_filtrados") -> bytes:
@@ -330,24 +444,10 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🦎 Explorador de fauna por informes mineros")
-st.caption(
-    "Consulta registros anuales consolidados. Para agregar nuevos años, coloca Excel con la misma hoja "
-    "03_Consolidado_Streamlit dentro de data/."
-)
+st.title("Explorador de fauna por informes mineros")
+st.caption("Consulta y analiza registros consolidados de fauna reportados en informes mineros.")
 
-with st.sidebar:
-    st.header("Datos")
-    st.write("La aplicación lee todos los archivos `.xlsx` de `data/`.")
-    if st.button("Recargar datos", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-data, load_log = load_data(str(DATA_DIR), SHEET_NAME)
-
-with st.sidebar:
-    st.subheader("Estado de carga")
-    st.dataframe(load_log, use_container_width=True, hide_index=True)
+data, _ = load_data(str(DATA_DIR), SHEET_NAME)
 
 if data.empty:
     st.error(f"No se pudo cargar informacion. Verifica que exista `data/` y la hoja `{SHEET_NAME}`.")
@@ -367,7 +467,7 @@ kpi6.metric("Con coordenadas", f"{int((filtered['este_fuente_original'].notna() 
 if filtered.empty:
     st.warning("No hay registros para los filtros seleccionados. Ajusta los filtros del panel lateral.")
 
-tabs = st.tabs(["Dashboard", "Estudios", "Especies", "Coordenadas", "Calidad", "Descarga"])
+tabs = st.tabs(["Dashboard", "Estudios", "Especies", "Mapa", "Descarga"])
 
 with tabs[0]:
     st.subheader("Resumen general")
@@ -551,97 +651,35 @@ with tabs[2]:
     st.dataframe(species_table, use_container_width=True, hide_index=True)
 
 with tabs[3]:
-    st.subheader("Coordenadas UTM")
-    coord_df = filtered[filtered["este_fuente_original"].notna() & filtered["norte_fuente_original"].notna()].copy()
-    if coord_df.empty:
-        st.info("No hay registros con coordenadas para los filtros actuales.")
+    st.subheader("Mapa de registros")
+    if not GEOJSON_PATH.exists():
+        st.info("No se encontro la base departamental para construir el mapa.")
     else:
-        fig = px.scatter(
-            coord_df,
-            x="este_fuente_original",
-            y="norte_fuente_original",
-            color="grupo_biologico",
-            facet_col="zona_utm_fuente_original" if coord_df["zona_utm_fuente_original"].nunique() <= 4 else None,
-            hover_data=[
+        departments_geojson = load_departments_geojson(str(GEOJSON_PATH))
+        fig, coord_df = build_department_map(filtered, departments_geojson)
+        st.plotly_chart(fig, use_container_width=True)
+
+        if coord_df.empty:
+            st.info("No hay registros georreferenciables para los filtros actuales.")
+        else:
+            coord_cols = [
+                "anio",
+                "codigo_estudio_limpio",
+                "grupo_biologico",
                 "nombre_cientifico",
                 "nombre_comun",
-                "codigo_estudio_limpio",
                 "estacion_fuente_original",
                 "departamento_estudio",
                 "provincia_estudio",
-            ],
-            color_discrete_sequence=COLOR_SEQUENCE,
-            title="Distribución de registros con coordenadas UTM",
-        )
-        fig.update_layout(xaxis_title="Este", yaxis_title="Norte", title_x=0.02)
-        st.plotly_chart(fig, use_container_width=True)
-
-        coord_cols = [
-            "anio",
-            "codigo_estudio_limpio",
-            "grupo_biologico",
-            "nombre_cientifico",
-            "nombre_comun",
-            "estacion_fuente_original",
-            "este_fuente_original",
-            "norte_fuente_original",
-            "zona_utm_fuente_original",
-            "departamento_estudio",
-            "provincia_estudio",
-            "fuente_base_especies",
-            "pagina_fuente_original",
-        ]
-        st.dataframe(coord_df[[c for c in coord_cols if c in coord_df.columns]], use_container_width=True, hide_index=True)
+                "latitud",
+                "longitud",
+                "zona_utm_fuente_original",
+                "fuente_base_especies",
+                "pagina_fuente_original",
+            ]
+            st.dataframe(coord_df[[c for c in coord_cols if c in coord_df.columns]], use_container_width=True, hide_index=True)
 
 with tabs[4]:
-    st.subheader("Control de calidad")
-    st.dataframe(quality_checks(data), use_container_width=True, hide_index=True)
-
-    q1, q2 = st.columns(2)
-    with q1:
-        st.markdown("**Registros sin coordenadas**")
-        no_coords = data[data["este_fuente_original"].isna() | data["norte_fuente_original"].isna()]
-        st.dataframe(
-            no_coords[
-                [
-                    c
-                    for c in [
-                        "anio",
-                        "codigo_estudio_limpio",
-                        "nombre_cientifico",
-                        "grupo_biologico",
-                        "estado_revision",
-                        "archivo_leido",
-                    ]
-                    if c in no_coords.columns
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-    with q2:
-        st.markdown("**Grupos fuera de fauna esperada**")
-        non_fauna = data[~data["grupo_biologico"].isin(FAUNA_GROUPS)]
-        st.dataframe(
-            non_fauna[
-                [
-                    c
-                    for c in [
-                        "anio",
-                        "codigo_estudio_limpio",
-                        "nombre_cientifico",
-                        "grupo_biologico",
-                        "familia",
-                        "archivo_leido",
-                    ]
-                    if c in non_fauna.columns
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-with tabs[5]:
     st.subheader("Descarga")
     download_cols = [col for col in filtered.columns if not col.startswith("unnamed")]
     filtered_download = filtered[download_cols].copy()
@@ -660,9 +698,3 @@ with tabs[5]:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
-    st.markdown("**Archivos leidos**")
-    st.dataframe(load_log, use_container_width=True, hide_index=True)
-
-st.caption(
-    "Actualización multiaño: agrega nuevos Excel en data/ con la hoja 03_Consolidado_Streamlit y la misma estructura."
-)
