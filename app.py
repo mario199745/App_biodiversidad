@@ -16,7 +16,7 @@ from shapely.ops import unary_union
 
 
 st.set_page_config(
-    page_title="Explorador de fauna por informes mineros",
+    page_title="Información de Patrimonio forestal - SERFOR",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -466,7 +466,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("Explorador de fauna por informes mineros")
+st.title("Información de Patrimonio forestal - SERFOR")
 st.caption("Consulta y analiza registros consolidados de fauna reportados en informes mineros.")
 
 data, _ = load_data(str(DATA_DIR), SHEET_NAME)

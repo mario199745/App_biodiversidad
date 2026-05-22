@@ -1,4 +1,4 @@
-# Explorador de fauna por informes mineros
+# Información de Patrimonio forestal - SERFOR
 
 Aplicación Streamlit para consultar registros consolidados de fauna extraídos de informes mineros. Está preparada para actualización web en Streamlit Community Cloud mediante GitHub.
 
