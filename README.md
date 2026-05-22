@@ -60,7 +60,7 @@ La vista de mapa usa la capa departamental:
 data/GEO/DEP_PERU.geojson
 ```
 
-Las coordenadas UTM de los registros se transforman a latitud y longitud para superponer los puntos sobre los departamentos del Perú.
+Las coordenadas UTM de los registros se transforman a latitud y longitud para superponer los puntos sobre los departamentos del Perú. La visualización del mapa muestra solo los puntos que caen dentro del territorio peruano.
 
 ## Agregar nuevos años
 

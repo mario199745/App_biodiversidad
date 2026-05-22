@@ -11,6 +11,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 from pyproj import Transformer
+from shapely.geometry import Point, shape
+from shapely.ops import unary_union
 
 
 st.set_page_config(
@@ -207,6 +209,13 @@ def load_departments_geojson(path: str) -> dict:
         return json.load(file)
 
 
+@st.cache_resource(show_spinner=False)
+def load_peru_geometry(path: str):
+    geojson = load_departments_geojson(path)
+    polygons = [shape(feature["geometry"]) for feature in geojson.get("features", []) if feature.get("geometry")]
+    return unary_union(polygons)
+
+
 def safe_unique_count(df: pd.DataFrame, column: str) -> int:
     if df.empty or column not in df.columns:
         return 0
@@ -260,6 +269,17 @@ def add_geographic_coordinates(df: pd.DataFrame) -> pd.DataFrame:
     return coord_df.dropna(subset=["longitud", "latitud"])
 
 
+def keep_points_inside_peru(coord_df: pd.DataFrame, peru_geometry) -> pd.DataFrame:
+    if coord_df.empty:
+        return coord_df
+
+    inside = coord_df.apply(
+        lambda row: peru_geometry.covers(Point(float(row["longitud"]), float(row["latitud"]))),
+        axis=1,
+    )
+    return coord_df[inside].copy()
+
+
 def department_count_table(df: pd.DataFrame, geojson: dict) -> pd.DataFrame:
     departments = [
         feature["properties"]["DEPARTAMEN"]
@@ -291,6 +311,8 @@ def build_department_map(filtered: pd.DataFrame, departments_geojson: dict):
     )
 
     coord_df = add_geographic_coordinates(filtered)
+    peru_geometry = load_peru_geometry(str(GEOJSON_PATH))
+    coord_df = keep_points_inside_peru(coord_df, peru_geometry)
     for idx, (group, group_df) in enumerate(coord_df.groupby("grupo_biologico", dropna=False)):
         hover_text = (
             group_df["nombre_cientifico"].fillna("")
@@ -386,24 +408,24 @@ def build_filters(data: pd.DataFrame) -> pd.DataFrame:
     with st.sidebar:
         st.header("Filtros")
         years = sorted([int(x) for x in data["anio"].dropna().unique()])
-        selected_years = st.multiselect("Año", years, default=years)
+        selected_years = st.multiselect("Año", years, placeholder="Todos los años")
 
         groups = option_values(data, "grupo_biologico")
-        selected_groups = st.multiselect("Grupo biológico", groups, default=groups)
+        selected_groups = st.multiselect("Grupo biológico", groups, placeholder="Todos los grupos")
 
         departments = option_values(data, "departamento_estudio")
-        selected_departments = st.multiselect("Departamento", departments, default=departments)
+        selected_departments = st.multiselect("Departamento", departments, placeholder="Todos los departamentos")
 
         provinces = option_values(data, "provincia_estudio")
-        selected_provinces = st.multiselect("Provincia", provinces, default=provinces)
+        selected_provinces = st.multiselect("Provincia", provinces, placeholder="Todas las provincias")
 
         families = option_values(data, "familia")
-        selected_families = st.multiselect("Familia", families, default=families)
+        selected_families = st.multiselect("Familia", families, placeholder="Todas las familias")
 
         studies = option_values(data, "codigo_estudio_limpio")
-        selected_studies = st.multiselect("Código de estudio", studies, default=studies)
+        selected_studies = st.multiselect("Código de estudio", studies, placeholder="Todos los estudios")
 
-        coord_mode = st.radio("Coordenadas", ["Todos", "Solo con coordenadas", "Sin coordenadas"], horizontal=False)
+        coord_mode = st.selectbox("Coordenadas", ["Todos", "Solo con coordenadas", "Sin coordenadas"])
         query = st.text_input("Buscar especie o nombre común", placeholder="Ej.: Telmatobius, cóndor")
 
     filtered = data.copy()
