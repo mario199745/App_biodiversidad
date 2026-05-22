@@ -26,6 +26,7 @@ DATA_DIR = BASE_DIR / "data"
 GEOJSON_PATH = DATA_DIR / "GEO" / "DEP_PERU.geojson"
 SHEET_NAME = "03_Consolidado_Streamlit"
 TEMP_PREFIX = "~$"
+EXCEL_EXTENSIONS = {".xlsx", ".xlsm"}
 
 CORE_COLUMNS = [
     "anio",
@@ -134,6 +135,44 @@ def extract_year_from_filename(filename: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def list_excel_files(folder: Path) -> list[Path]:
+    if not folder.exists():
+        return []
+    return sorted(
+        file
+        for file in folder.iterdir()
+        if file.is_file()
+        and file.suffix.lower() in EXCEL_EXTENSIONS
+        and not file.name.startswith(TEMP_PREFIX)
+    )
+
+
+def data_files_signature(data_dir: str) -> tuple[tuple[str, int, int], ...]:
+    folder = Path(data_dir)
+    signature = []
+    for file in list_excel_files(folder):
+        stat = file.stat()
+        signature.append((file.name, stat.st_size, stat.st_mtime_ns))
+    return tuple(signature)
+
+
+def find_streamlit_sheet(workbook: pd.ExcelFile, expected_sheet: str) -> str:
+    if expected_sheet in workbook.sheet_names:
+        return expected_sheet
+
+    expected_key = normalize_colname(expected_sheet)
+    normalized = {normalize_colname(sheet): sheet for sheet in workbook.sheet_names}
+    if expected_key in normalized:
+        return normalized[expected_key]
+
+    for key, sheet in normalized.items():
+        if "consolidado" in key and "streamlit" in key:
+            return sheet
+
+    available = ", ".join(workbook.sheet_names)
+    raise ValueError(f"No se encontro la hoja consolidada Streamlit. Hojas disponibles: {available}")
+
+
 def clean_text_columns(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
     for col in columns:
         if col in df.columns:
@@ -169,7 +208,11 @@ def normalize_dataset(df: pd.DataFrame, file_name: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def load_data(data_dir: str, sheet_name: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_data(
+    data_dir: str,
+    sheet_name: str,
+    files_signature: tuple[tuple[str, int, int], ...],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     folder = Path(data_dir)
     logs: list[dict[str, object]] = []
     frames: list[pd.DataFrame] = []
@@ -179,22 +222,22 @@ def load_data(data_dir: str, sheet_name: str) -> tuple[pd.DataFrame, pd.DataFram
             [{"archivo": str(folder), "estado": "ERROR", "detalle": "No existe la carpeta data/."}]
         )
 
-    files = sorted(file for file in folder.glob("*.xlsx") if file.is_file() and not file.name.startswith(TEMP_PREFIX))
+    files = list_excel_files(folder)
     if not files:
         return pd.DataFrame(), pd.DataFrame(
-            [{"archivo": "data/", "estado": "ERROR", "detalle": "No se encontraron archivos .xlsx."}]
+            [{"archivo": "data/", "estado": "ERROR", "detalle": "No se encontraron archivos Excel validos."}]
         )
 
     for file in files:
         try:
             workbook = pd.ExcelFile(file, engine="openpyxl")
-            sheet = sheet_name if sheet_name in workbook.sheet_names else workbook.sheet_names[0]
+            sheet = find_streamlit_sheet(workbook, sheet_name)
             raw = pd.read_excel(file, sheet_name=sheet, engine="openpyxl")
             frame = normalize_dataset(raw, file.name)
             frames.append(frame)
             detail = f"{len(frame):,} registros leidos desde {sheet}."
             if sheet != sheet_name:
-                detail += f" Hoja esperada no encontrada; se uso {sheet}."
+                detail += f" Se uso una hoja equivalente a {sheet_name}."
             logs.append({"archivo": file.name, "estado": "OK", "detalle": detail})
         except Exception as exc:  # noqa: BLE001
             logs.append({"archivo": file.name, "estado": "ERROR", "detalle": str(exc)})
@@ -469,7 +512,7 @@ st.markdown(
 st.title("Información de Patrimonio forestal - SERFOR")
 st.caption("Consulta y analiza registros consolidados de fauna reportados en informes mineros.")
 
-data, _ = load_data(str(DATA_DIR), SHEET_NAME)
+data, _ = load_data(str(DATA_DIR), SHEET_NAME, data_files_signature(str(DATA_DIR)))
 
 if data.empty:
     st.error(f"No se pudo cargar informacion. Verifica que exista `data/` y la hoja `{SHEET_NAME}`.")

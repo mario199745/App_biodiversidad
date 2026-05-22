@@ -64,7 +64,7 @@ Las coordenadas UTM de los registros se transforman a latitud y longitud para su
 
 ## Agregar nuevos años
 
-Para agregar otro año, coloca otro Excel con la misma hoja y estructura dentro de `data/`:
+Para agregar otro año, coloca otro Excel `.xlsx` o `.xlsm` con la misma hoja y estructura dentro de `data/`:
 
 ```text
 data/
@@ -78,6 +78,8 @@ Evita dejar archivos temporales de Excel, por ejemplo:
 ```text
 ~$especies_informes_mineros_2025_streamlit.xlsx
 ```
+
+La aplicación detecta cambios por nombre, tamaño y fecha de modificación del archivo. Si se agrega, reemplaza o actualiza un Excel anual, la lectura se vuelve a calcular automáticamente.
 
 ## Ejecutar localmente
 
