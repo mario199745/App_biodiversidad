@@ -717,9 +717,12 @@ def render_patrimonio_dashboard() -> None:
     c6.metric("Instrumentos fuente", safe_unique_count(fuentes_f, "instrumento_fuente"))
 
     st.info(
-        "Esta vista resume la cobertura actual de la base: especies registradas en fuentes disponibles, "
-        "territorios reportados y grupos biológicos identificados. Los conteos representan reportes de presencia "
-        "extraídos de Excel y deben interpretarse como ocurrencias documentadas, no como abundancia comparable entre estudios."
+        "Especies reportadas indica cuántos nombres científicos distintos aparecen en la base. "
+        "Reportes de especie cuenta las ocurrencias documentadas en los Excel revisados, no individuos comparables. "
+        "Fuentes consultadas resume los estudios, IGA o investigaciones disponibles. "
+        "Departamentos cubiertos muestra el alcance territorial normalizado. "
+        "Grupos biológicos resume la composición general, principalmente flora y fauna. "
+        "Instrumentos fuente diferencia el tipo institucional de procedencia de la información."
     )
 
     tabs = st.tabs(["General", "Especies", "Fuentes", "Descarga"])
