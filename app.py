@@ -569,6 +569,32 @@ def text_filter(df: pd.DataFrame, query: str, columns: list[str]) -> pd.DataFram
     return df[text.str.contains(q, na=False)]
 
 
+def split_semicolon_values(series: pd.Series) -> pd.Series:
+    if series.empty:
+        return pd.Series(dtype="string")
+    values = series.fillna("").astype(str).str.split(";").explode().str.strip()
+    return values[values.ne("")]
+
+
+def normalized_department_count(df: pd.DataFrame) -> int:
+    if df.empty or "departamento_normalizado" not in df.columns:
+        return 0
+    return int(split_semicolon_values(df["departamento_normalizado"]).nunique())
+
+
+def normalized_department_table(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "departamento_normalizado" not in df.columns:
+        return pd.DataFrame(columns=["departamento", "fuentes"])
+    tmp = df[["id_fuente", "departamento_normalizado"]].copy()
+    tmp["departamento"] = tmp["departamento_normalizado"].fillna("").astype(str).str.split(";")
+    tmp = tmp.explode("departamento")
+    tmp["departamento"] = tmp["departamento"].astype(str).str.strip()
+    tmp = tmp[tmp["departamento"].ne("")]
+    if tmp.empty:
+        return pd.DataFrame(columns=["departamento", "fuentes"])
+    return tmp.groupby("departamento", dropna=False)["id_fuente"].nunique().reset_index(name="fuentes")
+
+
 def patrimonio_filters(
     fuentes: pd.DataFrame,
     registros: pd.DataFrame,
@@ -582,7 +608,7 @@ def patrimonio_filters(
         instruments = option_values(fuentes, "instrumento_fuente")
         selected_instruments = st.multiselect("Instrumento", instruments, placeholder="Todos")
 
-        departments = option_values(fuentes, "departamento")
+        departments = sorted(split_semicolon_values(fuentes.get("departamento_normalizado", pd.Series(dtype=str))).unique().tolist())
         selected_departments = st.multiselect("Departamento fuente", departments, placeholder="Todos")
 
         groups = option_values(registros, "grupo_general")
@@ -607,7 +633,9 @@ def patrimonio_filters(
     if selected_instruments:
         f = f[f["instrumento_fuente"].isin(selected_instruments)]
     if selected_departments:
-        f = f[f["departamento"].isin(selected_departments)]
+        dept_text = f.get("departamento_normalizado", pd.Series("", index=f.index)).fillna("").astype(str)
+        mask = dept_text.apply(lambda value: any(dep in [part.strip() for part in value.split(";")] for dep in selected_departments))
+        f = f[mask]
     allowed_sources = set(f.get("id_fuente", pd.Series(dtype=str)).dropna().astype(str))
     if allowed_sources:
         r = r[r["id_fuente"].astype(str).isin(allowed_sources)]
@@ -617,7 +645,11 @@ def patrimonio_filters(
     if selected_levels:
         r = r[r["nivel_registro"].isin(selected_levels)]
 
-    f = text_filter(f, query, ["titulo_fuente", "autor_institucion", "departamento", "provincia", "nro_expediente"])
+    f = text_filter(
+        f,
+        query,
+        ["titulo_fuente", "autor_institucion", "departamento", "departamento_normalizado", "provincia", "nro_expediente"],
+    )
     r = text_filter(r, query, ["nombre_cientifico", "nombre_comun", "archivo_origen", "hoja_origen", "departamento", "provincia"])
     h = text_filter(h, query, ["archivo_excel", "hoja_excel", "encabezado_detectado"])
     return f, r, h
@@ -626,14 +658,15 @@ def patrimonio_filters(
 def render_patrimonio_dashboard() -> None:
     base = load_patrimonio_base(str(PATRIMONIO_EXCEL_PATH))
     fuentes = base.get("fuentes", pd.DataFrame())
-    inventario = base.get("inventario", pd.DataFrame())
     hojas = base.get("hojas", pd.DataFrame())
     registros = base.get("registros", pd.DataFrame())
-    calidad = base.get("calidad", pd.DataFrame())
-    diccionario = base.get("diccionario", pd.DataFrame())
 
-    st.title("Patrimonio forestal y fauna silvestre - base trazable")
-    st.caption("Estructura institucional preparada para Excel 2024-2025 y futuras extracciones documentales.")
+    st.title("Patrimonio forestal y fauna silvestre")
+    st.caption(
+        "Consulta integrada de estudios, investigaciones, IGA y registros de especies de flora y fauna silvestre. "
+        "Permite explorar qué especies fueron reportadas, en qué fuentes aparecen y cómo se distribuyen por año, "
+        "territorio y grupo biológico."
+    )
 
     if fuentes.empty and registros.empty:
         st.error("La base institucional existe, pero no contiene hojas legibles.")
@@ -649,26 +682,23 @@ def render_patrimonio_dashboard() -> None:
     st.divider()
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Fuentes", safe_unique_count(fuentes_f, "id_fuente"))
-    c2.metric("Archivos Excel", safe_unique_count(inventario, "id_archivo_excel"))
-    c3.metric(
-        "Hojas candidatas",
-        int((hojas_f.get("es_candidata_biodiversidad", pd.Series(dtype=str)).astype(str) == "si").sum())
-        if not hojas_f.empty
-        else 0,
-    )
-    c4.metric("Reportes extraídos", f"{len(registros_extraidos):,}")
-    c5.metric("Especies únicas", safe_unique_count(registros_extraidos, "nombre_cientifico"))
-    c6.metric("Departamentos", safe_unique_count(fuentes_f, "departamento"))
+    c2.metric("Fuentes con Excel", int(fuentes_f.get("archivos_excel", pd.Series(dtype="Int64")).fillna(0).gt(0).sum()) if not fuentes_f.empty else 0)
+    c3.metric("Reportes extraídos", f"{len(registros_extraidos):,}")
+    c4.metric("Especies únicas", safe_unique_count(registros_extraidos, "nombre_cientifico"))
+    c5.metric("Departamentos", normalized_department_count(fuentes_f))
+    c6.metric("Provincias", safe_unique_count(fuentes_f, "provincia"))
 
-    tabs = st.tabs(["General", "Especies", "Fuentes", "Excel y trazabilidad", "Calidad", "Descarga"])
+    tabs = st.tabs(["General", "Especies", "Fuentes", "Descarga"])
 
     with tabs[0]:
         a, b = st.columns(2)
         with a:
             by_year = fuentes_f.groupby("anio", dropna=False).size().reset_index(name="fuentes")
             if not by_year.empty:
+                by_year["anio"] = by_year["anio"].astype("Int64").astype(str)
                 fig = px.bar(by_year, x="anio", y="fuentes", text="fuentes", title="Fuentes por año")
                 fig.update_layout(xaxis_title="Año", yaxis_title="Fuentes", title_x=0.02)
+                fig.update_xaxes(type="category")
                 st.plotly_chart(fig, use_container_width=True)
         with b:
             by_instrument = fuentes_f.groupby("instrumento_fuente", dropna=False).size().reset_index(name="fuentes")
@@ -685,7 +715,7 @@ def render_patrimonio_dashboard() -> None:
                 fig.update_layout(xaxis_title="Grupo", yaxis_title="Reportes", title_x=0.02)
                 st.plotly_chart(fig, use_container_width=True)
         with b:
-            by_department = fuentes_f.groupby("departamento", dropna=False).size().reset_index(name="fuentes").sort_values("fuentes")
+            by_department = normalized_department_table(fuentes_f).sort_values("fuentes")
             if not by_department.empty:
                 fig = px.bar(by_department, y="departamento", x="fuentes", orientation="h", text="fuentes", title="Fuentes por departamento")
                 fig.update_layout(xaxis_title="Fuentes", yaxis_title="Departamento", title_x=0.02)
@@ -699,9 +729,9 @@ def render_patrimonio_dashboard() -> None:
             "instrumento_fuente",
             "tipo_documento_normalizado",
             "departamento",
+            "departamento_normalizado",
             "provincia",
             "archivos_excel",
-            "estado_revision",
         ]
         st.dataframe(fuentes_f[[c for c in display_cols if c in fuentes_f.columns]], use_container_width=True, hide_index=True)
 
@@ -734,44 +764,55 @@ def render_patrimonio_dashboard() -> None:
         st.dataframe(study_table.fillna(""), use_container_width=True, hide_index=True)
 
     with tabs[3]:
-        st.subheader("Inventario de archivos")
-        st.dataframe(inventario, use_container_width=True, hide_index=True)
-        st.subheader("Hojas detectadas")
-        st.dataframe(hojas_f, use_container_width=True, hide_index=True)
-        st.subheader("Registros y pendientes")
-        trace_cols = [
+        public_source_cols = [
+            "id_fuente",
+            "anio",
+            "numeracion",
+            "nro_expediente",
+            "titulo_fuente",
+            "tipo_documento_original",
+            "tipo_documento_normalizado",
+            "instrumento_fuente",
+            "autor_institucion",
+            "departamento",
+            "departamento_normalizado",
+            "provincia",
+            "resumen_fuente",
+        ]
+        public_record_cols = [
             "id_registro",
             "id_fuente",
             "anio",
-            "nivel_registro",
             "grupo_general",
             "subgrupo",
+            "ambito_ecologico",
+            "clase",
+            "orden",
+            "familia",
             "nombre_cientifico",
-            "archivo_origen",
-            "hoja_origen",
-            "fila_origen",
+            "nombre_comun",
+            "departamento",
+            "provincia",
+            "distrito",
+            "unidad_ecosistemica",
+            "estacion",
+            "temporada",
+            "metodo_registro",
+            "tipo_registro",
+            "numero_individuos_original",
+            "conteo_reportes",
             "estado_revision",
-            "observaciones",
         ]
-        st.dataframe(registros_f[[c for c in trace_cols if c in registros_f.columns]], use_container_width=True, hide_index=True)
-
-    with tabs[4]:
-        st.subheader("Controles")
-        st.dataframe(calidad, use_container_width=True, hide_index=True)
-        st.subheader("Diccionario")
-        st.dataframe(diccionario, use_container_width=True, hide_index=True)
-
-    with tabs[5]:
         st.download_button(
             "Descargar fuentes filtradas",
-            data=fuentes_f.to_csv(index=False).encode("utf-8-sig"),
+            data=fuentes_f[[c for c in public_source_cols if c in fuentes_f.columns]].to_csv(index=False).encode("utf-8-sig"),
             file_name="patrimonio_fuentes_filtradas.csv",
             mime="text/csv",
             use_container_width=True,
         )
         st.download_button(
             "Descargar registros filtrados",
-            data=registros_f.to_csv(index=False).encode("utf-8-sig"),
+            data=registros_f[[c for c in public_record_cols if c in registros_f.columns]].to_csv(index=False).encode("utf-8-sig"),
             file_name="patrimonio_registros_filtrados.csv",
             mime="text/csv",
             use_container_width=True,

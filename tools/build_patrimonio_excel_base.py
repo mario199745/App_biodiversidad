@@ -70,6 +70,33 @@ GROUP_HINTS = {
     "fauna": "Fauna",
 }
 
+PERU_DEPARTMENTS = {
+    "amazonas": "Amazonas",
+    "ancash": "Ancash",
+    "apurimac": "Apurimac",
+    "arequipa": "Arequipa",
+    "ayacucho": "Ayacucho",
+    "cajamarca": "Cajamarca",
+    "cusco": "Cusco",
+    "huancavelica": "Huancavelica",
+    "huanuco": "Huanuco",
+    "ica": "Ica",
+    "junin": "Junin",
+    "la libertad": "La Libertad",
+    "lambayeque": "Lambayeque",
+    "lima": "Lima",
+    "loreto": "Loreto",
+    "madre de dios": "Madre de Dios",
+    "moquegua": "Moquegua",
+    "pasco": "Pasco",
+    "piura": "Piura",
+    "puno": "Puno",
+    "san martin": "San Martin",
+    "tacna": "Tacna",
+    "tumbes": "Tumbes",
+    "ucayali": "Ucayali",
+}
+
 
 def normalize_text(value: object) -> str:
     if pd.isna(value):
@@ -85,6 +112,26 @@ def normalize_key(value: object) -> str:
     text = normalize_text(value).lower()
     text = re.sub(r"[^a-z0-9]+", "_", text)
     return text.strip("_")
+
+
+def normalize_department(value: object) -> str:
+    text = normalize_text(value)
+    if not text:
+        return ""
+    key = normalize_text(text).lower()
+    key = key.replace(" y ", ",")
+    key = key.replace("/", ",")
+    parts = [part.strip() for part in re.split(r"[,;]", key) if part.strip()]
+    found: list[str] = []
+    for part in parts:
+        part_key = normalize_text(part).lower()
+        if part_key in {"callao", "provincia constitucional del callao"}:
+            continue
+        for dep_key, dep_name in PERU_DEPARTMENTS.items():
+            if part_key == dep_key or dep_key in part_key:
+                if dep_name not in found:
+                    found.append(dep_name)
+    return "; ".join(found)
 
 
 def first_existing(row: pd.Series, candidates: Iterable[str]) -> str:
@@ -148,6 +195,7 @@ def load_master_sources(year: int, master_path: Path) -> pd.DataFrame:
             continue
         numeracion = first_existing(row, ["Numeración", "Numeracion", "numero_registro"])
         code = stable_code(numeracion, year, len(rows) + 1)
+        departamento_original = first_existing(row, ["Departamento", "departamento"])
         rows.append(
             {
                 "id_fuente": code,
@@ -159,9 +207,10 @@ def load_master_sources(year: int, master_path: Path) -> pd.DataFrame:
                 "tipo_documento_normalizado": normalize_document_type(
                     first_existing(row, ["Tipo de documento", "Tipo Documento"])
                 ),
-                "instrumento_fuente": first_existing(row, ["instrumento_fuente", "Tipo", "tipo"]),
+                "instrumento_fuente": normalize_instrument(first_existing(row, ["instrumento_fuente", "Tipo", "tipo"])),
                 "autor_institucion": first_existing(row, ["Remitente", "Autor", "Institución", "Institucion"]),
-                "departamento": first_existing(row, ["Departamento", "departamento"]),
+                "departamento": departamento_original,
+                "departamento_normalizado": normalize_department(departamento_original),
                 "provincia": first_existing(row, ["Provincia", "provincia"]),
                 "resumen_fuente": first_existing(row, ["Resumen", "resumen"]),
                 "archivo_maestro": str(master_path),
@@ -185,6 +234,16 @@ def normalize_document_type(value: object) -> str:
     if "final" in text:
         return "Informe final"
     return normalize_text(value)
+
+
+def normalize_instrument(value: object) -> str:
+    text = normalize_text(value)
+    key = normalize_key(text)
+    if key == "iga":
+        return "IGA"
+    if key in {"autorizacion_de_investigacion", "autorizacion_investigacion"}:
+        return "Autorización de Investigación"
+    return text
 
 
 def classify_group(text: str) -> tuple[str, str]:

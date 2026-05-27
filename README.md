@@ -40,6 +40,9 @@ Hojas principales:
 - `05_control_calidad`: controles basicos.
 - `06_diccionario`: definicion inicial de campos.
 
+Las hojas `02_inventario_excel`, `03_hojas_excel`, `05_control_calidad` y
+`06_diccionario` son internas. El dashboard no las muestra al usuario final.
+
 Para regenerarla:
 
 ```powershell
@@ -56,6 +59,11 @@ La trazabilidad se conserva mediante:
 - `archivo_origen`, `hoja_origen` y `fila_origen` para registros.
 - `estado_revision` y `observaciones` para diferenciar registros extraidos,
   hojas candidatas y pendientes de validacion.
+
+Para los departamentos se conserva el texto original del Excel en `departamento`
+y se agrega `departamento_normalizado` para filtros, mapas y conteos. Esto evita
+contar como departamentos distintos a combinaciones, errores de escritura o
+valores no departamentales.
 
 ### Base anual heredada
 
