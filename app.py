@@ -709,21 +709,30 @@ def render_patrimonio_dashboard() -> None:
 
     st.divider()
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Especies reportadas", safe_unique_count(registros_extraidos, "nombre_cientifico"))
-    c2.metric("Reportes de especie", f"{len(registros_extraidos):,}")
-    c3.metric("Fuentes consultadas", safe_unique_count(fuentes_f, "id_fuente"))
-    c4.metric("Departamentos cubiertos", normalized_department_count(fuentes_f))
-    c5.metric("Grupos biológicos", safe_unique_count(registros_extraidos, "grupo_general"))
-    c6.metric("Instrumentos fuente", safe_unique_count(fuentes_f, "instrumento_fuente"))
-
-    st.info(
-        "Especies reportadas indica cuántos nombres científicos distintos aparecen en la base. "
-        "Reportes de especie cuenta las ocurrencias documentadas en los Excel revisados, no individuos comparables. "
-        "Fuentes consultadas resume los estudios, IGA o investigaciones disponibles. "
-        "Departamentos cubiertos muestra el alcance territorial normalizado. "
-        "Grupos biológicos resume la composición general, principalmente flora y fauna. "
-        "Instrumentos fuente diferencia el tipo institucional de procedencia de la información."
-    )
+    with c1:
+        st.metric("Especies reportadas", safe_unique_count(registros_extraidos, "nombre_cientifico"))
+        with st.expander("Interpretación"):
+            st.write("Nombres científicos distintos identificados en la base filtrada.")
+    with c2:
+        st.metric("Reportes de especie", f"{len(registros_extraidos):,}")
+        with st.expander("Interpretación"):
+            st.write("Ocurrencias documentadas en Excel. No equivale a número de individuos.")
+    with c3:
+        st.metric("Fuentes consultadas", safe_unique_count(fuentes_f, "id_fuente"))
+        with st.expander("Interpretación"):
+            st.write("Estudios, IGA o investigaciones disponibles para la consulta.")
+    with c4:
+        st.metric("Departamentos cubiertos", normalized_department_count(fuentes_f))
+        with st.expander("Interpretación"):
+            st.write("Cobertura territorial normalizada a departamentos del Perú.")
+    with c5:
+        st.metric("Grupos biológicos", safe_unique_count(registros_extraidos, "grupo_general"))
+        with st.expander("Interpretación"):
+            st.write("Composición general de los registros, principalmente flora y fauna.")
+    with c6:
+        st.metric("Instrumentos fuente", safe_unique_count(fuentes_f, "instrumento_fuente"))
+        with st.expander("Interpretación"):
+            st.write("Tipo institucional de procedencia, como IGA o autorización de investigación.")
 
     tabs = st.tabs(["General", "Especies", "Fuentes", "Descarga"])
 
