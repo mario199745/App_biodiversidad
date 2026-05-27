@@ -711,27 +711,27 @@ def render_patrimonio_dashboard() -> None:
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         st.metric("Especies reportadas", safe_unique_count(registros_extraidos, "nombre_cientifico"))
-        with st.expander("Interpretación"):
+        with st.expander("Especies reportadas"):
             st.write("Nombres científicos distintos identificados en la base filtrada.")
     with c2:
         st.metric("Reportes de especie", f"{len(registros_extraidos):,}")
-        with st.expander("Interpretación"):
+        with st.expander("Reportes de especie"):
             st.write("Ocurrencias documentadas en Excel. No equivale a número de individuos.")
     with c3:
         st.metric("Fuentes consultadas", safe_unique_count(fuentes_f, "id_fuente"))
-        with st.expander("Interpretación"):
+        with st.expander("Fuentes consultadas"):
             st.write("Estudios, IGA o investigaciones disponibles para la consulta.")
     with c4:
         st.metric("Departamentos cubiertos", normalized_department_count(fuentes_f))
-        with st.expander("Interpretación"):
+        with st.expander("Departamentos cubiertos"):
             st.write("Cobertura territorial normalizada a departamentos del Perú.")
     with c5:
         st.metric("Grupos biológicos", safe_unique_count(registros_extraidos, "grupo_general"))
-        with st.expander("Interpretación"):
+        with st.expander("Grupos biológicos"):
             st.write("Composición general de los registros, principalmente flora y fauna.")
     with c6:
         st.metric("Instrumentos fuente", safe_unique_count(fuentes_f, "instrumento_fuente"))
-        with st.expander("Interpretación"):
+        with st.expander("Instrumentos fuente"):
             st.write("Tipo institucional de procedencia, como IGA o autorización de investigación.")
 
     tabs = st.tabs(["General", "Especies", "Fuentes", "Descarga"])
