@@ -17,6 +17,48 @@ App_biodiversidad_web_ready/
 
 ## Fuente de datos
 
+### Base institucional trazable
+
+La version actual prioriza una base institucional preparada para crecer:
+
+```text
+data/patrimonio_biodiversidad_base.xlsx
+```
+
+Esta base se genera desde los Excel disponibles en `ESTUDIOS/ESTUDIOS_2024` y
+`ESTUDIOS/ESTUDIOS_2025`, sin extraer todavia nueva informacion documental
+desde PDF o Word.
+
+Hojas principales:
+
+- `01_fuentes`: estudios/fuentes con anio, expediente, titulo, tipo de documento,
+  instrumento fuente, remitente, departamento y provincia.
+- `02_inventario_excel`: archivos Excel/CSV detectados por estudio.
+- `03_hojas_excel`: hojas detectadas, encabezado probable y marca de hoja candidata.
+- `04_registros_especies`: filas de especies extraidas heuristicamente desde Excel
+  y hojas candidatas pendientes de extraccion.
+- `05_control_calidad`: controles basicos.
+- `06_diccionario`: definicion inicial de campos.
+
+Para regenerarla:
+
+```powershell
+& 'C:\Users\USUARIO\miniconda3\Scripts\conda.exe' run -n especies_pdf python tools\build_patrimonio_excel_base.py
+```
+
+Si `data/patrimonio_biodiversidad_base.xlsx` existe, la app usa esta estructura.
+Si no existe, conserva la lectura heredada de archivos anuales Streamlit.
+
+La trazabilidad se conserva mediante:
+
+- `archivo_maestro` y `fila_maestro` para fuentes.
+- `ruta_archivo`, `archivo_excel` y `hoja_excel` para inventario.
+- `archivo_origen`, `hoja_origen` y `fila_origen` para registros.
+- `estado_revision` y `observaciones` para diferenciar registros extraidos,
+  hojas candidatas y pendientes de validacion.
+
+### Base anual heredada
+
 La app lee automáticamente todos los archivos `.xlsx` ubicados en `data/`. Cada archivo anual debe contener la hoja:
 
 ```text
