@@ -709,12 +709,18 @@ def render_patrimonio_dashboard() -> None:
 
     st.divider()
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Fuentes", safe_unique_count(fuentes_f, "id_fuente"))
-    c2.metric("Fuentes con Excel", int(fuentes_f.get("archivos_excel", pd.Series(dtype="Int64")).fillna(0).gt(0).sum()) if not fuentes_f.empty else 0)
-    c3.metric("Reportes extraídos", f"{len(registros_extraidos):,}")
-    c4.metric("Especies únicas", safe_unique_count(registros_extraidos, "nombre_cientifico"))
-    c5.metric("Departamentos", normalized_department_count(fuentes_f))
-    c6.metric("Provincias", safe_unique_count(fuentes_f, "provincia"))
+    c1.metric("Especies reportadas", safe_unique_count(registros_extraidos, "nombre_cientifico"))
+    c2.metric("Reportes de especie", f"{len(registros_extraidos):,}")
+    c3.metric("Fuentes consultadas", safe_unique_count(fuentes_f, "id_fuente"))
+    c4.metric("Departamentos cubiertos", normalized_department_count(fuentes_f))
+    c5.metric("Grupos biológicos", safe_unique_count(registros_extraidos, "grupo_general"))
+    c6.metric("Instrumentos fuente", safe_unique_count(fuentes_f, "instrumento_fuente"))
+
+    st.info(
+        "Esta vista resume la cobertura actual de la base: especies registradas en fuentes disponibles, "
+        "territorios reportados y grupos biológicos identificados. Los conteos representan reportes de presencia "
+        "extraídos de Excel y deben interpretarse como ocurrencias documentadas, no como abundancia comparable entre estudios."
+    )
 
     tabs = st.tabs(["General", "Especies", "Fuentes", "Descarga"])
 
