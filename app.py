@@ -536,8 +536,34 @@ st.markdown(
 PATRIMONIO_EXCEL_PATH = DATA_DIR / "patrimonio_biodiversidad_base.xlsx"
 
 
+def patrimonio_file_signature(path: Path) -> tuple[str, int, int]:
+    if not path.exists():
+        return ("", 0, 0)
+    stat = path.stat()
+    return (path.name, stat.st_size, stat.st_mtime_ns)
+
+
+def normalize_dashboard_key(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value).strip())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    return re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+
+
+def normalize_dashboard_instrument(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    text = str(value).strip()
+    key = normalize_dashboard_key(text)
+    if key == "iga":
+        return "IGA"
+    if key in {"autorizacion_de_investigacion", "autorizacion_investigacion"}:
+        return "Autorización de Investigación"
+    return text
+
+
 @st.cache_data(show_spinner=False)
-def load_patrimonio_base(path: str) -> dict[str, pd.DataFrame]:
+def load_patrimonio_base(path: str, file_signature: tuple[str, int, int]) -> dict[str, pd.DataFrame]:
     excel_path = Path(path)
     if not excel_path.exists():
         return {}
@@ -555,6 +581,8 @@ def load_patrimonio_base(path: str) -> dict[str, pd.DataFrame]:
             dataframes[key] = pd.read_excel(excel_path, sheet_name=sheet, engine="openpyxl")
         except Exception:
             dataframes[key] = pd.DataFrame()
+    if not dataframes["fuentes"].empty and "instrumento_fuente" in dataframes["fuentes"].columns:
+        dataframes["fuentes"]["instrumento_fuente"] = dataframes["fuentes"]["instrumento_fuente"].map(normalize_dashboard_instrument)
     return dataframes
 
 
@@ -656,7 +684,7 @@ def patrimonio_filters(
 
 
 def render_patrimonio_dashboard() -> None:
-    base = load_patrimonio_base(str(PATRIMONIO_EXCEL_PATH))
+    base = load_patrimonio_base(str(PATRIMONIO_EXCEL_PATH), patrimonio_file_signature(PATRIMONIO_EXCEL_PATH))
     fuentes = base.get("fuentes", pd.DataFrame())
     hojas = base.get("hojas", pd.DataFrame())
     registros = base.get("registros", pd.DataFrame())
