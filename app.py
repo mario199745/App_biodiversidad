@@ -556,7 +556,7 @@ def normalize_dashboard_instrument(value: object) -> str:
     text = str(value).strip()
     key = normalize_dashboard_key(text)
     if key == "iga":
-        return "IGA"
+        return "Instrumentos de Gestión Ambiental"
     if key in {"autorizacion_de_investigacion", "autorizacion_investigacion"}:
         return "Autorización de Investigación"
     return text
@@ -691,7 +691,7 @@ def render_patrimonio_dashboard() -> None:
 
     st.title("Patrimonio forestal y fauna silvestre")
     st.caption(
-        "Consulta integrada de estudios, investigaciones, IGA y registros de especies de flora y fauna silvestre. "
+        "Consulta integrada de estudios, investigaciones, Instrumentos de Gestión Ambiental y registros de especies de flora y fauna silvestre. "
         "Permite explorar qué especies fueron reportadas, en qué fuentes aparecen y cómo se distribuyen por año, "
         "territorio y grupo biológico."
     )
@@ -720,7 +720,7 @@ def render_patrimonio_dashboard() -> None:
     with c3:
         st.metric("Fuentes consultadas", safe_unique_count(fuentes_f, "id_fuente"))
         with st.expander("Fuentes consultadas"):
-            st.write("Estudios, IGA o investigaciones disponibles para la consulta.")
+            st.write("Estudios, Instrumentos de Gestión Ambiental o investigaciones disponibles para la consulta.")
     with c4:
         st.metric("Departamentos cubiertos", normalized_department_count(fuentes_f))
         with st.expander("Departamentos cubiertos"):
@@ -732,7 +732,7 @@ def render_patrimonio_dashboard() -> None:
     with c6:
         st.metric("Instrumentos fuente", safe_unique_count(fuentes_f, "instrumento_fuente"))
         with st.expander("Instrumentos fuente"):
-            st.write("Tipo institucional de procedencia, como IGA o autorización de investigación.")
+            st.write("Tipo institucional de procedencia, como Instrumentos de Gestión Ambiental o autorización de investigación.")
 
     tabs = st.tabs(["General", "Especies", "Fuentes", "Descarga"])
 
@@ -742,14 +742,14 @@ def render_patrimonio_dashboard() -> None:
             by_year = fuentes_f.groupby("anio", dropna=False).size().reset_index(name="fuentes")
             if not by_year.empty:
                 by_year["anio"] = by_year["anio"].astype("Int64").astype(str)
-                fig = px.bar(by_year, x="anio", y="fuentes", text="fuentes", title="Fuentes por año")
+                fig = px.bar(by_year, x="anio", y="fuentes", text="fuentes", title="Fuentes")
                 fig.update_layout(xaxis_title="Año", yaxis_title="Fuentes", title_x=0.02)
                 fig.update_xaxes(type="category")
                 st.plotly_chart(fig, use_container_width=True)
         with b:
             by_instrument = fuentes_f.groupby("instrumento_fuente", dropna=False).size().reset_index(name="fuentes")
             if not by_instrument.empty:
-                fig = px.pie(by_instrument, names="instrumento_fuente", values="fuentes", title="Fuentes por instrumento")
+                fig = px.pie(by_instrument, names="instrumento_fuente", values="fuentes", title="Instrumento")
                 fig.update_layout(title_x=0.02)
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -757,17 +757,17 @@ def render_patrimonio_dashboard() -> None:
         with a:
             by_group = registros_extraidos.groupby("grupo_general", dropna=False).size().reset_index(name="reportes")
             if not by_group.empty:
-                fig = px.bar(by_group, x="grupo_general", y="reportes", text="reportes", title="Reportes extraídos por grupo")
+                fig = px.bar(by_group, x="grupo_general", y="reportes", text="reportes", title="Grupos")
                 fig.update_layout(xaxis_title="Grupo", yaxis_title="Reportes", title_x=0.02)
                 st.plotly_chart(fig, use_container_width=True)
         with b:
             by_department = normalized_department_table(fuentes_f).sort_values("fuentes")
             if not by_department.empty:
-                fig = px.bar(by_department, y="departamento", x="fuentes", orientation="h", text="fuentes", title="Fuentes por departamento")
+                fig = px.bar(by_department, y="departamento", x="fuentes", orientation="h", text="fuentes", title="Departamentos")
                 fig.update_layout(xaxis_title="Fuentes", yaxis_title="Departamento", title_x=0.02)
                 st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("Fuentes integradas")
+        st.subheader("Fuentes")
         display_cols = [
             "id_fuente",
             "anio",

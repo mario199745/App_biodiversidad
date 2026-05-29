@@ -240,7 +240,7 @@ def normalize_instrument(value: object) -> str:
     text = normalize_text(value)
     key = normalize_key(text)
     if key == "iga":
-        return "IGA"
+        return "Instrumentos de Gestión Ambiental"
     if key in {"autorizacion_de_investigacion", "autorizacion_investigacion"}:
         return "Autorización de Investigación"
     return text
@@ -615,7 +615,7 @@ def build_quality(sources: pd.DataFrame, inventory: pd.DataFrame, sheets: pd.Dat
 def field_dictionary() -> pd.DataFrame:
     rows = [
         ("fuentes", "id_fuente", "Identificador anual de fuente/estudio."),
-        ("fuentes", "instrumento_fuente", "Categoría institucional rescatada, por ejemplo IGA o Autorización de Investigación."),
+        ("fuentes", "instrumento_fuente", "Categoría institucional rescatada, por ejemplo Instrumentos de Gestión Ambiental o Autorización de Investigación."),
         ("inventario_excel", "ruta_archivo", "Ruta absoluta del Excel original inventariado."),
         ("hojas_excel", "encabezado_detectado", "Fila probable de encabezados detectada sin alterar el archivo original."),
         ("registros_especies", "nivel_registro", "Indica si el registro es una hoja candidata o una fila extraída."),
