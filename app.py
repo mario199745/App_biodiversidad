@@ -742,7 +742,7 @@ def render_patrimonio_dashboard() -> None:
             by_year = fuentes_f.groupby("anio", dropna=False).size().reset_index(name="fuentes")
             if not by_year.empty:
                 by_year["anio"] = by_year["anio"].astype("Int64").astype(str)
-                fig = px.bar(by_year, x="anio", y="fuentes", text="fuentes", title="Fuentes")
+                fig = px.bar(by_year, x="anio", y="fuentes", text="fuentes", title="Fuentes por Años")
                 fig.update_layout(xaxis_title="Año", yaxis_title="Fuentes", title_x=0.02)
                 fig.update_xaxes(type="category")
                 st.plotly_chart(fig, use_container_width=True)
