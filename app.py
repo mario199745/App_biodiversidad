@@ -24,6 +24,7 @@ except ImportError:
 
 st.set_page_config(
     page_title="Información de Patrimonio forestal - SERFOR",
+    page_icon="🌿",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -124,7 +125,18 @@ TEXT_COLUMNS = [
 
 NUMERIC_COLUMNS = ["anio", "este_fuente_original", "norte_fuente_original"]
 
-COLOR_SEQUENCE = px.colors.qualitative.Set2 + px.colors.qualitative.Bold
+COLOR_SEQUENCE = [
+    "#0F766E",
+    "#D97706",
+    "#2563EB",
+    "#7C3AED",
+    "#DC2626",
+    "#0891B2",
+    "#65A30D",
+    "#DB2777",
+]
+px.defaults.template = "plotly_white"
+px.defaults.color_discrete_sequence = COLOR_SEQUENCE
 FAUNA_GROUPS = {"anfibios", "artropodos", "aves", "herpetofauna", "mamiferos", "reptiles"}
 PERU_UTM_EPSG_PREFIX = "327"
 
@@ -525,15 +537,129 @@ def build_filters(data: pd.DataFrame) -> pd.DataFrame:
 st.markdown(
     """
     <style>
-    .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
-    [data-testid="stMetricValue"] {font-size: 1.55rem;}
-    div[data-testid="stDataFrame"] {border-radius: 0.75rem;}
+    :root {
+        --serfor-green: #0F766E;
+        --serfor-green-dark: #115E59;
+        --serfor-ink: #16302D;
+        --serfor-muted: #64748B;
+        --serfor-line: #DCE9E6;
+        --serfor-soft: #F2F8F6;
+        --serfor-accent: #D97706;
+    }
+    .stApp {
+        background:
+            radial-gradient(circle at 92% 2%, rgba(15,118,110,.08), transparent 23rem),
+            #FBFDFC;
+        color: var(--serfor-ink);
+    }
+    .block-container {
+        max-width: 1480px;
+        padding-top: 1.6rem;
+        padding-bottom: 3rem;
+    }
+    h1 {
+        color: var(--serfor-ink);
+        font-size: clamp(2rem, 3vw, 3rem) !important;
+        letter-spacing: -0.035em;
+        margin-bottom: .35rem !important;
+    }
+    h2, h3 {color: var(--serfor-ink); letter-spacing: -.015em;}
+    [data-testid="stCaptionContainer"] {
+        color: var(--serfor-muted);
+        font-size: 1rem;
+        max-width: 900px;
+    }
+    .app-kicker {
+        color: var(--serfor-green);
+        font-size: .76rem;
+        font-weight: 800;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        margin-bottom: -.35rem;
+    }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #F1F8F6 0%, #F8FBFA 100%);
+        border-right: 1px solid var(--serfor-line);
+    }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
+        color: var(--serfor-green-dark);
+        font-size: 1.15rem;
+    }
+    [data-testid="stMetric"] {
+        min-height: 118px;
+        padding: 1.15rem 1.25rem;
+        background: rgba(255,255,255,.92);
+        border: 1px solid var(--serfor-line);
+        border-top: 3px solid var(--serfor-green);
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(15, 76, 69, .06);
+    }
+    [data-testid="stMetricLabel"] {
+        color: var(--serfor-muted);
+        font-weight: 650;
+    }
+    [data-testid="stMetricValue"] {
+        color: var(--serfor-green-dark);
+        font-size: 2rem;
+        font-weight: 750;
+        letter-spacing: -.035em;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: .35rem;
+        padding: .35rem;
+        background: var(--serfor-soft);
+        border: 1px solid var(--serfor-line);
+        border-radius: 14px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 2.7rem;
+        padding: 0 1.25rem;
+        border-radius: 10px;
+        color: #47615D;
+        font-weight: 650;
+    }
+    .stTabs [aria-selected="true"] {
+        background: #FFFFFF;
+        color: var(--serfor-green-dark);
+        box-shadow: 0 3px 10px rgba(15,76,69,.08);
+    }
+    div[data-testid="stDataFrame"] {
+        overflow: hidden;
+        border: 1px solid var(--serfor-line);
+        border-radius: 14px;
+        box-shadow: 0 6px 20px rgba(15,76,69,.04);
+    }
+    [data-testid="stPlotlyChart"] {
+        background: #FFFFFF;
+        border: 1px solid var(--serfor-line);
+        border-radius: 16px;
+        box-shadow: 0 6px 20px rgba(15,76,69,.045);
+        overflow: hidden;
+    }
+    .stDownloadButton > button, .stButton > button {
+        min-height: 2.8rem;
+        border: 1px solid var(--serfor-green) !important;
+        border-radius: 10px !important;
+        color: var(--serfor-green-dark) !important;
+        font-weight: 700 !important;
+    }
+    .stDownloadButton > button:hover, .stButton > button:hover {
+        color: #FFFFFF !important;
+        background: var(--serfor-green) !important;
+    }
+    hr {border-color: var(--serfor-line) !important;}
+    @media (max-width: 900px) {
+        .block-container {padding-left: 1rem; padding-right: 1rem;}
+        [data-testid="stMetric"] {min-height: 100px;}
+        .stTabs [data-baseweb="tab"] {padding: 0 .75rem;}
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 PATRIMONIO_EXCEL_PATH = DATA_DIR / "patrimonio_biodiversidad_base.xlsx"
+PATRIMONIO_2020_PATH = DATA_DIR / "patrimonio_biodiversidad_2020.xlsx"
 
 
 def patrimonio_file_signature(path: Path) -> tuple[str, int, int]:
@@ -563,10 +689,10 @@ def normalize_dashboard_instrument(value: object) -> str:
 
 
 @st.cache_data(show_spinner=False)
-def load_patrimonio_base(path: str, file_signature: tuple[str, int, int]) -> dict[str, pd.DataFrame]:
-    excel_path = Path(path)
-    if not excel_path.exists():
-        return {}
+def load_patrimonio_base(
+    paths: tuple[str, ...],
+    file_signatures: tuple[tuple[str, int, int], ...],
+) -> dict[str, pd.DataFrame]:
     sheets = {
         "fuentes": "01_fuentes",
         "inventario": "02_inventario_excel",
@@ -575,12 +701,20 @@ def load_patrimonio_base(path: str, file_signature: tuple[str, int, int]) -> dic
         "calidad": "05_control_calidad",
         "diccionario": "06_diccionario",
     }
-    dataframes: dict[str, pd.DataFrame] = {}
-    for key, sheet in sheets.items():
-        try:
-            dataframes[key] = pd.read_excel(excel_path, sheet_name=sheet, engine="openpyxl")
-        except Exception:
-            dataframes[key] = pd.DataFrame()
+    frames: dict[str, list[pd.DataFrame]] = {key: [] for key in sheets}
+    for path in paths:
+        excel_path = Path(path)
+        if not excel_path.exists():
+            continue
+        for key, sheet in sheets.items():
+            try:
+                frames[key].append(pd.read_excel(excel_path, sheet_name=sheet, engine="openpyxl"))
+            except Exception:
+                continue
+    dataframes = {
+        key: pd.concat(sheet_frames, ignore_index=True) if sheet_frames else pd.DataFrame()
+        for key, sheet_frames in frames.items()
+    }
     if not dataframes["fuentes"].empty and "instrumento_fuente" in dataframes["fuentes"].columns:
         dataframes["fuentes"]["instrumento_fuente"] = dataframes["fuentes"]["instrumento_fuente"].map(normalize_dashboard_instrument)
     return dataframes
@@ -665,9 +799,8 @@ def patrimonio_filters(
         mask = dept_text.apply(lambda value: any(dep in [part.strip() for part in value.split(";")] for dep in selected_departments))
         f = f[mask]
     allowed_sources = set(f.get("id_fuente", pd.Series(dtype=str)).dropna().astype(str))
-    if allowed_sources:
-        r = r[r["id_fuente"].astype(str).isin(allowed_sources)]
-        h = h[h["id_fuente"].astype(str).isin(allowed_sources)]
+    r = r[r["id_fuente"].astype(str).isin(allowed_sources)]
+    h = h[h["id_fuente"].astype(str).isin(allowed_sources)]
     if selected_groups:
         r = r[r["grupo_general"].isin(selected_groups)]
     if selected_levels:
@@ -684,11 +817,14 @@ def patrimonio_filters(
 
 
 def render_patrimonio_dashboard() -> None:
-    base = load_patrimonio_base(str(PATRIMONIO_EXCEL_PATH), patrimonio_file_signature(PATRIMONIO_EXCEL_PATH))
+    patrimonio_paths = (str(PATRIMONIO_EXCEL_PATH), str(PATRIMONIO_2020_PATH))
+    patrimonio_signatures = tuple(patrimonio_file_signature(Path(path)) for path in patrimonio_paths)
+    base = load_patrimonio_base(patrimonio_paths, patrimonio_signatures)
     fuentes = base.get("fuentes", pd.DataFrame())
     hojas = base.get("hojas", pd.DataFrame())
     registros = base.get("registros", pd.DataFrame())
 
+    st.markdown('<div class="app-kicker">SERFOR · Consulta integrada</div>', unsafe_allow_html=True)
     st.title("Patrimonio forestal y fauna silvestre")
     st.caption(
         "Consulta integrada de estudios, investigaciones, Instrumentos de Gestión Ambiental y registros de especies de flora y fauna silvestre. "
@@ -708,31 +844,44 @@ def render_patrimonio_dashboard() -> None:
     )
 
     st.divider()
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1, c2, c3 = st.columns(3)
     with c1:
-        st.metric("Especies reportadas", safe_unique_count(registros_extraidos, "nombre_cientifico"))
-        with st.expander("Especies reportadas"):
-            st.write("Nombres científicos distintos identificados en la base filtrada.")
+        st.metric(
+            "Especies reportadas",
+            safe_unique_count(registros_extraidos, "nombre_cientifico"),
+            help="Nombres científicos distintos identificados en la base filtrada.",
+        )
     with c2:
-        st.metric("Reportes de especie", f"{len(registros_extraidos):,}")
-        with st.expander("Reportes de especie"):
-            st.write("Ocurrencias documentadas en Excel. No equivale a número de individuos.")
+        st.metric(
+            "Reportes de especie",
+            f"{len(registros_extraidos):,}",
+            help="Ocurrencias documentadas en Excel. No equivale a número de individuos.",
+        )
     with c3:
-        st.metric("Fuentes consultadas", safe_unique_count(fuentes_f, "id_fuente"))
-        with st.expander("Fuentes consultadas"):
-            st.write("Estudios, Instrumentos de Gestión Ambiental o investigaciones disponibles para la consulta.")
+        st.metric(
+            "Fuentes consultadas",
+            safe_unique_count(fuentes_f, "id_fuente"),
+            help="Estudios, Instrumentos de Gestión Ambiental o investigaciones disponibles para la consulta.",
+        )
+    c4, c5, c6 = st.columns(3)
     with c4:
-        st.metric("Departamentos cubiertos", normalized_department_count(fuentes_f))
-        with st.expander("Departamentos cubiertos"):
-            st.write("Cobertura territorial normalizada a departamentos del Perú.")
+        st.metric(
+            "Departamentos cubiertos",
+            normalized_department_count(fuentes_f),
+            help="Cobertura territorial normalizada a departamentos del Perú.",
+        )
     with c5:
-        st.metric("Grupos biológicos", safe_unique_count(registros_extraidos, "grupo_general"))
-        with st.expander("Grupos biológicos"):
-            st.write("Composición general de los registros, principalmente flora y fauna.")
+        st.metric(
+            "Grupos biológicos",
+            safe_unique_count(registros_extraidos, "grupo_general"),
+            help="Composición general de los registros, principalmente flora y fauna.",
+        )
     with c6:
-        st.metric("Instrumentos fuente", safe_unique_count(fuentes_f, "instrumento_fuente"))
-        with st.expander("Instrumentos fuente"):
-            st.write("Tipo institucional de procedencia, como Instrumentos de Gestión Ambiental o autorización de investigación.")
+        st.metric(
+            "Instrumentos fuente",
+            safe_unique_count(fuentes_f, "instrumento_fuente"),
+            help="Tipo institucional de procedencia, como Instrumentos de Gestión Ambiental o autorización de investigación.",
+        )
 
     tabs = st.tabs(["General", "Especies", "Fuentes", "Descarga"])
 
@@ -745,13 +894,13 @@ def render_patrimonio_dashboard() -> None:
                 fig = px.bar(by_year, x="anio", y="fuentes", text="fuentes", title="Años")
                 fig.update_layout(xaxis_title="Año", yaxis_title="Fuentes", title_x=0.02)
                 fig.update_xaxes(type="category")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
         with b:
             by_instrument = fuentes_f.groupby("instrumento_fuente", dropna=False).size().reset_index(name="fuentes")
             if not by_instrument.empty:
                 fig = px.pie(by_instrument, names="instrumento_fuente", values="fuentes", title="Instrumento")
                 fig.update_layout(title_x=0.02)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
 
         a, b = st.columns(2)
         with a:
@@ -759,13 +908,13 @@ def render_patrimonio_dashboard() -> None:
             if not by_group.empty:
                 fig = px.bar(by_group, x="grupo_general", y="reportes", text="reportes", title="Grupos")
                 fig.update_layout(xaxis_title="Grupo", yaxis_title="Reportes", title_x=0.02)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
         with b:
             by_department = normalized_department_table(fuentes_f).sort_values("fuentes")
             if not by_department.empty:
                 fig = px.bar(by_department, y="departamento", x="fuentes", orientation="h", text="fuentes", title="Departamentos")
                 fig.update_layout(xaxis_title="Fuentes", yaxis_title="Departamento", title_x=0.02)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
 
         st.subheader("Fuentes")
         display_cols = [
@@ -779,7 +928,7 @@ def render_patrimonio_dashboard() -> None:
             "provincia",
             "archivos_excel",
         ]
-        st.dataframe(fuentes_f[[c for c in display_cols if c in fuentes_f.columns]], use_container_width=True, hide_index=True)
+        st.dataframe(fuentes_f[[c for c in display_cols if c in fuentes_f.columns]], width="stretch", hide_index=True)
 
     with tabs[1]:
         if registros_extraidos.empty:
@@ -796,7 +945,7 @@ def render_patrimonio_dashboard() -> None:
                 .reset_index()
                 .sort_values(["fuentes", "reportes"], ascending=False)
             )
-            st.dataframe(species_table, use_container_width=True, hide_index=True)
+            st.dataframe(species_table, width="stretch", hide_index=True)
 
     with tabs[2]:
         study_table = fuentes_f.copy()
@@ -807,7 +956,12 @@ def render_patrimonio_dashboard() -> None:
                 .reset_index()
             )
             study_table = study_table.merge(report_counts, on="id_fuente", how="left")
-        st.dataframe(study_table.fillna(""), use_container_width=True, hide_index=True)
+        study_display = study_table.copy()
+        numeric_display_cols = study_display.select_dtypes(include="number").columns
+        study_display[numeric_display_cols] = study_display[numeric_display_cols].fillna(0)
+        text_display_cols = study_display.columns.difference(numeric_display_cols)
+        study_display[text_display_cols] = study_display[text_display_cols].fillna("")
+        st.dataframe(study_display, width="stretch", hide_index=True)
 
     with tabs[3]:
         public_source_cols = [
@@ -854,14 +1008,14 @@ def render_patrimonio_dashboard() -> None:
             data=fuentes_f[[c for c in public_source_cols if c in fuentes_f.columns]].to_csv(index=False).encode("utf-8-sig"),
             file_name="patrimonio_fuentes_filtradas.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
         st.download_button(
             "Descargar registros filtrados",
             data=registros_f[[c for c in public_record_cols if c in registros_f.columns]].to_csv(index=False).encode("utf-8-sig"),
             file_name="patrimonio_registros_filtrados.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
 
 
@@ -869,6 +1023,7 @@ if PATRIMONIO_EXCEL_PATH.exists():
     render_patrimonio_dashboard()
     st.stop()
 
+st.markdown('<div class="app-kicker">SERFOR · Consulta integrada</div>', unsafe_allow_html=True)
 st.title("Información de Patrimonio forestal - SERFOR")
 st.caption("Consulta y analiza registros consolidados de fauna reportados en informes mineros.")
 
@@ -881,10 +1036,11 @@ if data.empty:
 filtered = build_filters(data)
 
 st.divider()
-kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+kpi1, kpi2, kpi3 = st.columns(3)
 kpi1.metric("Anios", safe_unique_count(filtered, "anio"))
 kpi2.metric("Estudios", safe_unique_count(filtered, "id_estudio_anual"))
 kpi3.metric("Registros", f"{len(filtered):,}")
+kpi4, kpi5, kpi6 = st.columns(3)
 kpi4.metric("Taxones", safe_unique_count(filtered, "nombre_cientifico"))
 kpi5.metric("Familias", safe_unique_count(filtered, "familia"))
 kpi6.metric("Con coordenadas", f"{int((filtered['este_fuente_original'].notna() & filtered['norte_fuente_original'].notna()).sum()):,}")
@@ -904,7 +1060,7 @@ with tabs[0]:
         else:
             fig = px.bar(by_year, x="anio", y="registros", text="registros", title="Registros por año")
             fig.update_layout(xaxis_title="Año", yaxis_title="Registros", title_x=0.02)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     with c2:
         by_group = filtered.groupby("grupo_biologico", dropna=False).size().reset_index(name="registros")
         if by_group.empty:
@@ -918,7 +1074,7 @@ with tabs[0]:
                 color_discrete_sequence=COLOR_SEQUENCE,
             )
             fig.update_layout(title_x=0.02)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
     c3, c4 = st.columns(2)
     with c3:
@@ -938,7 +1094,7 @@ with tabs[0]:
                 title="Registros por departamento",
             )
             fig.update_layout(xaxis_title="Registros", yaxis_title="Departamento", title_x=0.02)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     with c4:
         top_studies = (
             filtered.groupby(["codigo_estudio_limpio", "titulo_estudio"], dropna=False)["nombre_cientifico"]
@@ -951,7 +1107,7 @@ with tabs[0]:
             top_studies["estudio"] = top_studies["codigo_estudio_limpio"] + " | " + top_studies["titulo_estudio"].str.slice(0, 60)
             fig = px.bar(top_studies, y="estudio", x="taxones", orientation="h", text="taxones", title="Taxones por estudio")
             fig.update_layout(xaxis_title="Taxones", yaxis_title="Estudio", title_x=0.02)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
     st.subheader("Vista consolidada filtrada")
     display_cols = [
@@ -971,7 +1127,7 @@ with tabs[0]:
         "tipo_asignacion",
         "estado_revision",
     ]
-    st.dataframe(filtered[[c for c in display_cols if c in filtered.columns]], use_container_width=True, hide_index=True)
+    st.dataframe(filtered[[c for c in display_cols if c in filtered.columns]], width="stretch", hide_index=True)
 
 with tabs[1]:
     st.subheader("Explorador de estudios")
@@ -999,7 +1155,7 @@ with tabs[1]:
         .reset_index()
         .sort_values(["anio", "codigo_estudio_limpio"])
     )
-    st.dataframe(study_table, use_container_width=True, hide_index=True)
+    st.dataframe(study_table, width="stretch", hide_index=True)
 
     if not study_table.empty:
         study_id = st.selectbox(
@@ -1028,7 +1184,7 @@ with tabs[1]:
             "zona_utm_fuente_original",
             "tipo_asignacion",
         ]
-        st.dataframe(study_df[[c for c in cols if c in study_df.columns]], use_container_width=True, hide_index=True)
+        st.dataframe(study_df[[c for c in cols if c in study_df.columns]], width="stretch", hide_index=True)
 
 with tabs[2]:
     st.subheader("Explorador de especies")
@@ -1059,7 +1215,7 @@ with tabs[2]:
                 color_discrete_sequence=COLOR_SEQUENCE,
             )
             fig.update_layout(xaxis_title="Registros", yaxis_title="Taxon", title_x=0.02)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     with c2:
         families = (
             filtered.groupby("familia")["nombre_cientifico"]
@@ -1071,9 +1227,9 @@ with tabs[2]:
         if not families.empty:
             fig = px.bar(families, y="familia", x="taxones", orientation="h", text="taxones", title="Taxones por familia")
             fig.update_layout(xaxis_title="Taxones", yaxis_title="Familia", title_x=0.02)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
-    st.dataframe(species_table, use_container_width=True, hide_index=True)
+    st.dataframe(species_table, width="stretch", hide_index=True)
 
 with tabs[3]:
     st.subheader("Mapa de registros")
@@ -1082,7 +1238,7 @@ with tabs[3]:
     else:
         departments_geojson = load_departments_geojson(str(GEOJSON_PATH))
         fig, coord_df = build_department_map(filtered, departments_geojson)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         if coord_df.empty:
             st.info("No hay registros georreferenciables para los filtros actuales.")
@@ -1102,7 +1258,7 @@ with tabs[3]:
                 "fuente_base_especies",
                 "pagina_fuente_original",
             ]
-            st.dataframe(coord_df[[c for c in coord_cols if c in coord_df.columns]], use_container_width=True, hide_index=True)
+            st.dataframe(coord_df[[c for c in coord_cols if c in coord_df.columns]], width="stretch", hide_index=True)
 
 with tabs[4]:
     st.subheader("Descarga")
@@ -1114,12 +1270,12 @@ with tabs[4]:
         data=filtered_download.to_csv(index=False).encode("utf-8-sig"),
         file_name="fauna_filtrada_streamlit.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
     )
     st.download_button(
         "Descargar filtrado en Excel",
         data=to_excel_bytes(filtered_download),
         file_name="fauna_filtrada_streamlit.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
+        width="stretch",
     )
