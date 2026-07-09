@@ -282,6 +282,16 @@ with tabs[0]:
         )
         render_bar(by_source_file, "fuentes", "archivo_origen", "Archivos origen", orientation="h")
 
+    by_author = (
+        filtered.assign(remitente_display=filtered["remitente"].replace("", "Sin dato"))
+        .groupby("remitente_display", dropna=False)
+        .size()
+        .reset_index(name="fuentes")
+        .sort_values("fuentes")
+        .tail(25)
+    )
+    render_bar(by_author, "fuentes", "remitente_display", "Autor / institucion", orientation="h")
+
 with tabs[1]:
     st.subheader("Explorador de fuentes")
     display_cols = [
