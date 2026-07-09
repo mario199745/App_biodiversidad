@@ -1,129 +1,22 @@
 from __future__ import annotations
 
 import io
-import json
-import re
-import unicodedata
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-try:
-    from pyproj import Transformer
-    from shapely.geometry import Point, shape
-    from shapely.ops import unary_union
-except ImportError:
-    Transformer = None
-    Point = None
-    shape = None
-    unary_union = None
-
 
 st.set_page_config(
-    page_title="Información de Patrimonio forestal - SERFOR",
+    page_title="Fuentes y autorizaciones - SERFOR",
     page_icon="🌿",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-GEOJSON_PATH = DATA_DIR / "GEO" / "DEP_PERU.geojson"
-SHEET_NAME = "03_Consolidado_Streamlit"
-TEMP_PREFIX = "~$"
-EXCEL_EXTENSIONS = {".xlsx", ".xlsm"}
-
-CORE_COLUMNS = [
-    "anio",
-    "id_registro_anual",
-    "id_estudio_anual",
-    "id_registro",
-    "id_estudio",
-    "codigo_estudio",
-    "codigo_estudio_limpio",
-    "titulo_estudio",
-    "remitente",
-    "departamento_estudio",
-    "provincia_estudio",
-    "sector_asociado",
-    "tipo_documento",
-    "tipo",
-    "id_especie_base",
-    "grupo_biologico",
-    "nombre_cientifico",
-    "nombre_comun",
-    "nivel_taxonomico_registro",
-    "clase",
-    "subclase",
-    "orden",
-    "familia",
-    "estacion_fuente_original",
-    "este_fuente_original",
-    "norte_fuente_original",
-    "zona_utm_fuente_original",
-    "departamento_fuente_original",
-    "provincia_fuente_original",
-    "pagina_fuente_original",
-    "fuente_base_especies",
-    "observacion_saneamiento",
-    "tipo_asignacion",
-    "estado_revision",
-    "fuente_archivo_anual",
-]
-
-REQUIRED_COLUMNS = [
-    "anio",
-    "id_registro_anual",
-    "id_estudio_anual",
-    "codigo_estudio_limpio",
-    "titulo_estudio",
-    "grupo_biologico",
-    "nombre_cientifico",
-    "este_fuente_original",
-    "norte_fuente_original",
-    "estado_revision",
-]
-
-TEXT_COLUMNS = [
-    "id_registro_anual",
-    "id_estudio_anual",
-    "id_registro",
-    "id_estudio",
-    "codigo_estudio",
-    "codigo_estudio_limpio",
-    "titulo_estudio",
-    "remitente",
-    "departamento_estudio",
-    "provincia_estudio",
-    "sector_asociado",
-    "tipo_documento",
-    "tipo",
-    "id_especie_base",
-    "grupo_biologico",
-    "nombre_cientifico",
-    "nombre_comun",
-    "nivel_taxonomico_registro",
-    "clase",
-    "subclase",
-    "orden",
-    "familia",
-    "estacion_fuente_original",
-    "zona_utm_fuente_original",
-    "departamento_fuente_original",
-    "provincia_fuente_original",
-    "pagina_fuente_original",
-    "fuente_base_especies",
-    "observacion_saneamiento",
-    "tipo_asignacion",
-    "estado_revision",
-    "fuente_archivo_anual",
-    "archivo_leido",
-]
-
-NUMERIC_COLUMNS = ["anio", "este_fuente_original", "norte_fuente_original"]
+DATA_PATH = BASE_DIR / "data" / "dashboard_fuentes" / "base_fuentes_autorizaciones.xlsx"
 
 COLOR_SEQUENCE = [
     "#0F766E",
@@ -137,598 +30,59 @@ COLOR_SEQUENCE = [
 ]
 px.defaults.template = "plotly_white"
 px.defaults.color_discrete_sequence = COLOR_SEQUENCE
-FAUNA_GROUPS = {"anfibios", "artropodos", "aves", "herpetofauna", "mamiferos", "reptiles"}
-PERU_UTM_EPSG_PREFIX = "327"
 
 
-def normalize_colname(name: object) -> str:
-    text = unicodedata.normalize("NFKD", str(name).strip().lower())
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = re.sub(r"\s+", "_", text)
-    text = re.sub(r"[^a-z0-9_]+", "", text)
-    return text
-
-
-def extract_year_from_filename(filename: str) -> int | None:
-    match = re.search(r"(20\d{2})", filename)
-    return int(match.group(1)) if match else None
-
-
-def list_excel_files(folder: Path) -> list[Path]:
-    if not folder.exists():
-        return []
-    return sorted(
-        file
-        for file in folder.iterdir()
-        if file.is_file()
-        and file.suffix.lower() in EXCEL_EXTENSIONS
-        and not file.name.startswith(TEMP_PREFIX)
-    )
-
-
-def data_files_signature(data_dir: str) -> tuple[tuple[str, int, int], ...]:
-    folder = Path(data_dir)
-    signature = []
-    for file in list_excel_files(folder):
-        stat = file.stat()
-        signature.append((file.name, stat.st_size, stat.st_mtime_ns))
-    return tuple(signature)
-
-
-def find_streamlit_sheet(workbook: pd.ExcelFile, expected_sheet: str) -> str:
-    if expected_sheet in workbook.sheet_names:
-        return expected_sheet
-
-    expected_key = normalize_colname(expected_sheet)
-    normalized = {normalize_colname(sheet): sheet for sheet in workbook.sheet_names}
-    if expected_key in normalized:
-        return normalized[expected_key]
-
-    for key, sheet in normalized.items():
-        if "consolidado" in key and "streamlit" in key:
-            return sheet
-
-    available = ", ".join(workbook.sheet_names)
-    raise ValueError(f"No se encontro la hoja consolidada Streamlit. Hojas disponibles: {available}")
-
-
-def clean_text_columns(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
-    for col in columns:
-        if col in df.columns:
-            df[col] = df[col].astype("string").fillna("").str.replace(r"\s+", " ", regex=True).str.strip()
-    return df
-
-
-def ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
-    for col in CORE_COLUMNS:
-        if col not in df.columns:
-            df[col] = pd.NA
-    return df
-
-
-def normalize_dataset(df: pd.DataFrame, file_name: str) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = [normalize_colname(col) for col in df.columns]
-    df = ensure_columns(df)
-    df["archivo_leido"] = file_name
-
-    for col in NUMERIC_COLUMNS:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    if df["anio"].isna().all():
-        df["anio"] = extract_year_from_filename(file_name)
-    df["anio"] = pd.to_numeric(df["anio"], errors="coerce").astype("Int64")
-
-    df = clean_text_columns(df, TEXT_COLUMNS)
-    df["grupo_biologico"] = df["grupo_biologico"].str.lower()
-    df["estado_revision"] = df["estado_revision"].str.lower()
-    return df
-
-
-@st.cache_data(show_spinner=False)
-def load_data(
-    data_dir: str,
-    sheet_name: str,
-    files_signature: tuple[tuple[str, int, int], ...],
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    folder = Path(data_dir)
-    logs: list[dict[str, object]] = []
-    frames: list[pd.DataFrame] = []
-
-    if not folder.exists():
-        return pd.DataFrame(), pd.DataFrame(
-            [{"archivo": str(folder), "estado": "ERROR", "detalle": "No existe la carpeta data/."}]
-        )
-
-    files = list_excel_files(folder)
-    if not files:
-        return pd.DataFrame(), pd.DataFrame(
-            [{"archivo": "data/", "estado": "ERROR", "detalle": "No se encontraron archivos Excel validos."}]
-        )
-
-    for file in files:
-        try:
-            workbook = pd.ExcelFile(file, engine="openpyxl")
-            sheet = find_streamlit_sheet(workbook, sheet_name)
-            raw = pd.read_excel(file, sheet_name=sheet, engine="openpyxl")
-            frame = normalize_dataset(raw, file.name)
-            frames.append(frame)
-            detail = f"{len(frame):,} registros leidos desde {sheet}."
-            if sheet != sheet_name:
-                detail += f" Se uso una hoja equivalente a {sheet_name}."
-            logs.append({"archivo": file.name, "estado": "OK", "detalle": detail})
-        except Exception as exc:  # noqa: BLE001
-            logs.append({"archivo": file.name, "estado": "ERROR", "detalle": str(exc)})
-
-    data = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-    return data, pd.DataFrame(logs)
-
-
-@st.cache_data(show_spinner=False)
-def load_departments_geojson(path: str) -> dict:
-    with Path(path).open("r", encoding="utf-8") as file:
-        return json.load(file)
-
-
-@st.cache_resource(show_spinner=False)
-def load_peru_geometry(path: str):
-    if shape is None or unary_union is None:
-        raise RuntimeError("Las dependencias geograficas shapely/pyproj no estan disponibles.")
-    geojson = load_departments_geojson(path)
-    polygons = [shape(feature["geometry"]) for feature in geojson.get("features", []) if feature.get("geometry")]
-    return unary_union(polygons)
-
-
-def safe_unique_count(df: pd.DataFrame, column: str) -> int:
-    if df.empty or column not in df.columns:
-        return 0
-    return int(df[column].dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique())
-
-
-def option_values(df: pd.DataFrame, column: str) -> list[str]:
-    if column not in df.columns:
-        return []
-    values = df[column].dropna().astype(str).str.strip()
-    values = values[values.ne("")]
-    return sorted(values.unique().tolist())
-
-
-def normalize_label(value: object) -> str:
-    text = unicodedata.normalize("NFKD", str(value).strip().upper())
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = re.sub(r"\s+", " ", text)
-    return text
-
-
-def parse_utm_zone(value: object) -> int | None:
-    if pd.isna(value):
-        return None
-    match = re.search(r"(17|18|19)", str(value))
-    return int(match.group(1)) if match else None
-
-
-def add_geographic_coordinates(df: pd.DataFrame) -> pd.DataFrame:
-    if Transformer is None:
-        return pd.DataFrame()
-    coord_df = df[df["este_fuente_original"].notna() & df["norte_fuente_original"].notna()].copy()
-    if coord_df.empty:
-        return coord_df
-
-    coord_df["zona_utm_num"] = coord_df["zona_utm_fuente_original"].map(parse_utm_zone)
-    coord_df["longitud"] = pd.NA
-    coord_df["latitud"] = pd.NA
-
-    for zone in sorted(coord_df["zona_utm_num"].dropna().unique()):
-        epsg = f"EPSG:{PERU_UTM_EPSG_PREFIX}{int(zone):02d}"
-        transformer = Transformer.from_crs(epsg, "EPSG:4326", always_xy=True)
-        mask = coord_df["zona_utm_num"].eq(zone)
-        lon, lat = transformer.transform(
-            coord_df.loc[mask, "este_fuente_original"].astype(float).to_numpy(),
-            coord_df.loc[mask, "norte_fuente_original"].astype(float).to_numpy(),
-        )
-        coord_df.loc[mask, "longitud"] = lon
-        coord_df.loc[mask, "latitud"] = lat
-
-    coord_df["longitud"] = pd.to_numeric(coord_df["longitud"], errors="coerce")
-    coord_df["latitud"] = pd.to_numeric(coord_df["latitud"], errors="coerce")
-    return coord_df.dropna(subset=["longitud", "latitud"])
-
-
-def keep_points_inside_peru(coord_df: pd.DataFrame, peru_geometry) -> pd.DataFrame:
-    if Point is None:
-        return coord_df
-    if coord_df.empty:
-        return coord_df
-
-    inside = coord_df.apply(
-        lambda row: peru_geometry.covers(Point(float(row["longitud"]), float(row["latitud"]))),
-        axis=1,
-    )
-    return coord_df[inside].copy()
-
-
-def department_count_table(df: pd.DataFrame, geojson: dict) -> pd.DataFrame:
-    departments = [
-        feature["properties"]["DEPARTAMEN"]
-        for feature in geojson.get("features", [])
-        if feature.get("properties", {}).get("DEPARTAMEN")
-    ]
-    base = pd.DataFrame({"departamento_mapa": sorted(departments)})
-
-    counts = df.copy()
-    counts["departamento_mapa"] = counts["departamento_estudio"].map(normalize_label)
-    counts = counts.groupby("departamento_mapa", dropna=False).size().reset_index(name="registros")
-
-    return base.merge(counts, on="departamento_mapa", how="left").fillna({"registros": 0})
-
-
-def build_department_map(filtered: pd.DataFrame, departments_geojson: dict):
-    department_counts = department_count_table(filtered, departments_geojson)
-    fig = px.choropleth(
-        department_counts,
-        geojson=departments_geojson,
-        locations="departamento_mapa",
-        featureidkey="properties.DEPARTAMEN",
-        color="registros",
-        hover_name="departamento_mapa",
-        hover_data={"departamento_mapa": False, "registros": ":,.0f"},
-        color_continuous_scale="Teal",
-        projection="mercator",
-        title="Registros georreferenciados por departamento",
-    )
-
-    coord_df = add_geographic_coordinates(filtered)
-    if not coord_df.empty and shape is not None and unary_union is not None:
-        peru_geometry = load_peru_geometry(str(GEOJSON_PATH))
-        coord_df = keep_points_inside_peru(coord_df, peru_geometry)
-    if coord_df.empty or "grupo_biologico" not in coord_df.columns:
-        fig.update_geos(fitbounds="locations", visible=False)
-        fig.update_layout(
-            height=640,
-            margin={"l": 0, "r": 0, "t": 56, "b": 0},
-            legend_title_text="Grupo biologico",
-            coloraxis_colorbar={"title": "Registros"},
-        )
-        return fig, coord_df
-
-    for idx, (group, group_df) in enumerate(coord_df.groupby("grupo_biologico", dropna=False)):
-        hover_text = (
-            group_df["nombre_cientifico"].fillna("")
-            + "<br>"
-            + group_df["codigo_estudio_limpio"].fillna("")
-            + "<br>"
-            + group_df["departamento_estudio"].fillna("")
-            + " / "
-            + group_df["provincia_estudio"].fillna("")
-        )
-        fig.add_scattergeo(
-            lon=group_df["longitud"],
-            lat=group_df["latitud"],
-            mode="markers",
-            name=str(group) if str(group).strip() else "Sin grupo",
-            text=hover_text,
-            hovertemplate="%{text}<extra></extra>",
-            marker={
-                "size": 7,
-                "opacity": 0.78,
-                "color": COLOR_SEQUENCE[idx % len(COLOR_SEQUENCE)],
-                "line": {"width": 0.6, "color": "#FFFFFF"},
-            },
-        )
-
-    fig.update_geos(fitbounds="locations", visible=False)
-    fig.update_layout(
-        height=640,
-        margin={"l": 0, "r": 0, "t": 56, "b": 0},
-        legend_title_text="Grupo biologico",
-        coloraxis_colorbar={"title": "Registros"},
-    )
-    return fig, coord_df
-
-
-def to_excel_bytes(df: pd.DataFrame, sheet_name: str = "datos_filtrados") -> bytes:
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
-        workbook = writer.book
-        worksheet = writer.sheets[sheet_name[:31]]
-        header_fmt = workbook.add_format({"bold": True, "bg_color": "#0F766E", "font_color": "#FFFFFF"})
-        for col_num, value in enumerate(df.columns):
-            worksheet.write(0, col_num, value, header_fmt)
-            width = min(max(len(str(value)) + 4, 12), 42)
-            worksheet.set_column(col_num, col_num, width)
-        worksheet.autofilter(0, 0, max(len(df), 1), max(len(df.columns) - 1, 0))
-        worksheet.freeze_panes(1, 0)
-    return output.getvalue()
-
-
-def quality_checks(data: pd.DataFrame) -> pd.DataFrame:
-    checks = []
-    for col in REQUIRED_COLUMNS:
-        if col not in data.columns:
-            checks.append({"control": f"Existe columna {col}", "estado": "ERROR", "observacion": "Columna ausente"})
-            continue
-        empty = data[col].isna() | data[col].astype(str).str.strip().eq("")
-        checks.append(
-            {
-                "control": f"Campos vacios en {col}",
-                "estado": "OK" if not empty.any() else "REVISAR",
-                "observacion": f"{int(empty.sum())} registros vacios",
-            }
-        )
-
-    duplicated_id = data.duplicated(subset=["archivo_leido", "id_registro_anual"], keep=False)
-    no_coords = data["este_fuente_original"].isna() | data["norte_fuente_original"].isna()
-    non_fauna = ~data["grupo_biologico"].isin(FAUNA_GROUPS)
-    checks.extend(
-        [
-            {
-                "control": "Duplicados por archivo e id_registro_anual",
-                "estado": "OK" if not duplicated_id.any() else "REVISAR",
-                "observacion": f"{int(duplicated_id.sum())} registros duplicados",
-            },
-            {
-                "control": "Registros sin coordenadas UTM",
-                "estado": "OK" if not no_coords.any() else "REVISAR",
-                "observacion": f"{int(no_coords.sum())} registros sin coordenadas",
-            },
-            {
-                "control": "Registros fuera de grupos de fauna esperados",
-                "estado": "OK" if not non_fauna.any() else "REVISAR",
-                "observacion": f"{int(non_fauna.sum())} registros fuera de fauna esperada",
-            },
-        ]
-    )
-    return pd.DataFrame(checks)
-
-
-def build_filters(data: pd.DataFrame) -> pd.DataFrame:
-    with st.sidebar:
-        st.header("Filtros")
-        years = sorted([int(x) for x in data["anio"].dropna().unique()])
-        selected_years = st.multiselect("Año", years, placeholder="Todos los años")
-
-        groups = option_values(data, "grupo_biologico")
-        selected_groups = st.multiselect("Grupo biológico", groups, placeholder="Todos los grupos")
-
-        departments = option_values(data, "departamento_estudio")
-        selected_departments = st.multiselect("Departamento", departments, placeholder="Todos los departamentos")
-
-        provinces = option_values(data, "provincia_estudio")
-        selected_provinces = st.multiselect("Provincia", provinces, placeholder="Todas las provincias")
-
-        families = option_values(data, "familia")
-        selected_families = st.multiselect("Familia", families, placeholder="Todas las familias")
-
-        studies = option_values(data, "codigo_estudio_limpio")
-        selected_studies = st.multiselect("Código de estudio", studies, placeholder="Todos los estudios")
-
-        coord_mode = st.selectbox("Coordenadas", ["Todos", "Solo con coordenadas", "Sin coordenadas"])
-        query = st.text_input("Buscar especie o nombre común", placeholder="Ej.: Telmatobius, cóndor")
-
-    filtered = data.copy()
-    if selected_years:
-        filtered = filtered[filtered["anio"].isin(selected_years)]
-    if selected_groups:
-        filtered = filtered[filtered["grupo_biologico"].isin(selected_groups)]
-    if selected_departments:
-        filtered = filtered[filtered["departamento_estudio"].isin(selected_departments)]
-    if selected_provinces:
-        filtered = filtered[filtered["provincia_estudio"].isin(selected_provinces)]
-    if selected_families:
-        filtered = filtered[filtered["familia"].isin(selected_families)]
-    if selected_studies:
-        filtered = filtered[filtered["codigo_estudio_limpio"].isin(selected_studies)]
-
-    has_coords = filtered["este_fuente_original"].notna() & filtered["norte_fuente_original"].notna()
-    if coord_mode == "Solo con coordenadas":
-        filtered = filtered[has_coords]
-    elif coord_mode == "Sin coordenadas":
-        filtered = filtered[~has_coords]
-
-    if query.strip():
-        q = query.strip().lower()
-        text = filtered["nombre_cientifico"].str.lower() + " " + filtered["nombre_comun"].str.lower()
-        filtered = filtered[text.str.contains(q, na=False)]
-    return filtered
-
-
-st.markdown(
-    """
-    <style>
-    :root {
-        --serfor-green: #0F766E;
-        --serfor-green-dark: #115E59;
-        --serfor-ink: #16302D;
-        --serfor-muted: #64748B;
-        --serfor-line: #DCE9E6;
-        --serfor-soft: #F2F8F6;
-        --serfor-accent: #D97706;
-    }
-    .stApp {
-        background:
-            radial-gradient(circle at 92% 2%, rgba(15,118,110,.08), transparent 23rem),
-            #FBFDFC;
-        color: var(--serfor-ink);
-    }
-    .block-container {
-        max-width: 1480px;
-        padding-top: 1.6rem;
-        padding-bottom: 3rem;
-    }
-    h1 {
-        color: var(--serfor-ink);
-        font-size: clamp(2rem, 3vw, 3rem) !important;
-        letter-spacing: -0.035em;
-        margin-bottom: .35rem !important;
-    }
-    h2, h3 {color: var(--serfor-ink); letter-spacing: -.015em;}
-    [data-testid="stCaptionContainer"] {
-        color: var(--serfor-muted);
-        font-size: 1rem;
-        max-width: 900px;
-    }
-    .app-kicker {
-        color: var(--serfor-green);
-        font-size: .76rem;
-        font-weight: 800;
-        letter-spacing: .12em;
-        text-transform: uppercase;
-        margin-bottom: -.35rem;
-    }
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #F1F8F6 0%, #F8FBFA 100%);
-        border-right: 1px solid var(--serfor-line);
-    }
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
-        color: var(--serfor-green-dark);
-        font-size: 1.15rem;
-    }
-    [data-testid="stMetric"] {
-        min-height: 118px;
-        padding: 1.15rem 1.25rem;
-        background: rgba(255,255,255,.92);
-        border: 1px solid var(--serfor-line);
-        border-top: 3px solid var(--serfor-green);
-        border-radius: 16px;
-        box-shadow: 0 8px 24px rgba(15, 76, 69, .06);
-    }
-    [data-testid="stMetricLabel"] {
-        color: var(--serfor-muted);
-        font-weight: 650;
-    }
-    [data-testid="stMetricValue"] {
-        color: var(--serfor-green-dark);
-        font-size: 2rem;
-        font-weight: 750;
-        letter-spacing: -.035em;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: .35rem;
-        padding: .35rem;
-        background: var(--serfor-soft);
-        border: 1px solid var(--serfor-line);
-        border-radius: 14px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 2.7rem;
-        padding: 0 1.25rem;
-        border-radius: 10px;
-        color: #47615D;
-        font-weight: 650;
-    }
-    .stTabs [aria-selected="true"] {
-        background: #FFFFFF;
-        color: var(--serfor-green-dark);
-        box-shadow: 0 3px 10px rgba(15,76,69,.08);
-    }
-    div[data-testid="stDataFrame"] {
-        overflow: hidden;
-        border: 1px solid var(--serfor-line);
-        border-radius: 14px;
-        box-shadow: 0 6px 20px rgba(15,76,69,.04);
-    }
-    [data-testid="stPlotlyChart"] {
-        background: #FFFFFF;
-        border: 1px solid var(--serfor-line);
-        border-radius: 16px;
-        box-shadow: 0 6px 20px rgba(15,76,69,.045);
-        overflow: hidden;
-    }
-    .stDownloadButton > button, .stButton > button {
-        min-height: 2.8rem;
-        border: 1px solid var(--serfor-green) !important;
-        border-radius: 10px !important;
-        color: var(--serfor-green-dark) !important;
-        font-weight: 700 !important;
-    }
-    .stDownloadButton > button:hover, .stButton > button:hover {
-        color: #FFFFFF !important;
-        background: var(--serfor-green) !important;
-    }
-    hr {border-color: var(--serfor-line) !important;}
-    @media (max-width: 900px) {
-        .block-container {padding-left: 1rem; padding-right: 1rem;}
-        [data-testid="stMetric"] {min-height: 100px;}
-        .stTabs [data-baseweb="tab"] {padding: 0 .75rem;}
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-PATRIMONIO_EXCEL_PATH = DATA_DIR / "patrimonio_biodiversidad_base.xlsx"
-PATRIMONIO_2020_PATH = DATA_DIR / "patrimonio_biodiversidad_2020.xlsx"
-
-
-def patrimonio_file_signature(path: Path) -> tuple[str, int, int]:
+def file_signature(path: Path) -> tuple[str, int, int]:
     if not path.exists():
         return ("", 0, 0)
     stat = path.stat()
     return (path.name, stat.st_size, stat.st_mtime_ns)
 
 
-def normalize_dashboard_key(value: object) -> str:
-    text = unicodedata.normalize("NFKD", str(value).strip())
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = re.sub(r"\s+", " ", text).strip().lower()
-    return re.sub(r"[^a-z0-9]+", "_", text).strip("_")
-
-
-def normalize_dashboard_instrument(value: object) -> str:
-    if pd.isna(value):
-        return ""
-    text = str(value).strip()
-    key = normalize_dashboard_key(text)
-    if key == "iga":
-        return "Instrumentos de Gestión Ambiental"
-    if key in {"autorizacion_de_investigacion", "autorizacion_investigacion"}:
-        return "Autorización de Investigación"
-    return text
-
-
 @st.cache_data(show_spinner=False)
-def load_patrimonio_base(
-    paths: tuple[str, ...],
-    file_signatures: tuple[tuple[str, int, int], ...],
-) -> dict[str, pd.DataFrame]:
+def load_dashboard_base(path: str, signature: tuple[str, int, int]) -> dict[str, pd.DataFrame]:
+    excel_path = Path(path)
+    if not excel_path.exists():
+        return {
+            "fuentes": pd.DataFrame(),
+            "departamentos": pd.DataFrame(),
+            "provincias": pd.DataFrame(),
+            "indice": pd.DataFrame(),
+            "calidad": pd.DataFrame(),
+            "diccionario": pd.DataFrame(),
+        }
+
     sheets = {
-        "fuentes": "01_fuentes",
-        "inventario": "02_inventario_excel",
-        "hojas": "03_hojas_excel",
-        "registros": "04_registros_especies",
-        "calidad": "05_control_calidad",
-        "diccionario": "06_diccionario",
+        "fuentes": "fuentes",
+        "departamentos": "departamentos_fuente",
+        "provincias": "provincias_fuente",
+        "indice": "indice_origen",
+        "calidad": "control_calidad",
+        "diccionario": "diccionario",
     }
-    frames: dict[str, list[pd.DataFrame]] = {key: [] for key in sheets}
-    for path in paths:
-        excel_path = Path(path)
-        if not excel_path.exists():
-            continue
-        for key, sheet in sheets.items():
-            try:
-                frames[key].append(pd.read_excel(excel_path, sheet_name=sheet, engine="openpyxl"))
-            except Exception:
-                continue
-    dataframes = {
-        key: pd.concat(sheet_frames, ignore_index=True) if sheet_frames else pd.DataFrame()
-        for key, sheet_frames in frames.items()
-    }
-    if not dataframes["fuentes"].empty and "instrumento_fuente" in dataframes["fuentes"].columns:
-        dataframes["fuentes"]["instrumento_fuente"] = dataframes["fuentes"]["instrumento_fuente"].map(normalize_dashboard_instrument)
-    return dataframes
+    data: dict[str, pd.DataFrame] = {}
+    for key, sheet_name in sheets.items():
+        try:
+            data[key] = pd.read_excel(excel_path, sheet_name=sheet_name, engine="openpyxl")
+        except Exception:
+            data[key] = pd.DataFrame()
+
+    fuentes = data["fuentes"].copy()
+    if not fuentes.empty:
+        fuentes["anio"] = pd.to_numeric(fuentes.get("anio"), errors="coerce").astype("Int64")
+        text_cols = fuentes.columns.difference(["anio", "fila_origen", "orden_archivo", "orden_hoja_origen"])
+        for col in text_cols:
+            fuentes[col] = fuentes[col].astype("string").fillna("").str.replace(r"\s+", " ", regex=True).str.strip()
+    data["fuentes"] = fuentes
+    return data
 
 
-def text_filter(df: pd.DataFrame, query: str, columns: list[str]) -> pd.DataFrame:
-    if df.empty or not query.strip():
-        return df
-    q = query.strip().lower()
-    available = [col for col in columns if col in df.columns]
-    if not available:
-        return df
-    text = df[available].fillna("").astype(str).agg(" ".join, axis=1).str.lower()
-    return df[text.str.contains(q, na=False)]
+def option_values(df: pd.DataFrame, column: str) -> list[str]:
+    if df.empty or column not in df.columns:
+        return []
+    values = df[column].dropna().astype(str).str.strip()
+    values = values[values.ne("")]
+    return sorted(values.unique().tolist())
 
 
 def split_semicolon_values(series: pd.Series) -> pd.Series:
@@ -738,544 +92,262 @@ def split_semicolon_values(series: pd.Series) -> pd.Series:
     return values[values.ne("")]
 
 
-def normalized_department_count(df: pd.DataFrame) -> int:
-    if df.empty or "departamento_normalizado" not in df.columns:
+def text_filter(df: pd.DataFrame, query: str, columns: list[str]) -> pd.DataFrame:
+    if df.empty or not query.strip():
+        return df
+    available = [col for col in columns if col in df.columns]
+    if not available:
+        return df
+    needle = query.strip().casefold()
+    text = df[available].fillna("").astype(str).agg(" ".join, axis=1).str.casefold()
+    return df[text.str.contains(needle, na=False, regex=False)]
+
+
+def safe_unique_count(df: pd.DataFrame, column: str) -> int:
+    if df.empty or column not in df.columns:
         return 0
-    return int(split_semicolon_values(df["departamento_normalizado"]).nunique())
+    values = df[column].dropna().astype(str).str.strip()
+    values = values[values.ne("")]
+    return int(values.nunique())
 
 
-def normalized_department_table(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty or "departamento_normalizado" not in df.columns:
-        return pd.DataFrame(columns=["departamento", "fuentes"])
-    tmp = df[["id_fuente", "departamento_normalizado"]].copy()
-    tmp["departamento"] = tmp["departamento_normalizado"].fillna("").astype(str).str.split(";")
-    tmp = tmp.explode("departamento")
-    tmp["departamento"] = tmp["departamento"].astype(str).str.strip()
-    tmp = tmp[tmp["departamento"].ne("")]
-    if tmp.empty:
-        return pd.DataFrame(columns=["departamento", "fuentes"])
-    return tmp.groupby("departamento", dropna=False)["id_fuente"].nunique().reset_index(name="fuentes")
+def exploded_count(df: pd.DataFrame, column: str) -> int:
+    if df.empty or column not in df.columns:
+        return 0
+    return int(split_semicolon_values(df[column]).nunique())
 
 
-def patrimonio_filters(
-    fuentes: pd.DataFrame,
-    registros: pd.DataFrame,
-    hojas: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def contains_selected_values(series: pd.Series, selected: list[str]) -> pd.Series:
+    if not selected:
+        return pd.Series(True, index=series.index)
+    selected_set = set(selected)
+    return series.fillna("").astype(str).apply(
+        lambda value: bool(selected_set.intersection(part.strip() for part in value.split(";") if part.strip()))
+    )
+
+
+def build_filters(fuentes: pd.DataFrame) -> pd.DataFrame:
     with st.sidebar:
         st.header("Filtros")
-        years = sorted([int(x) for x in fuentes.get("anio", pd.Series(dtype="Int64")).dropna().unique()])
-        selected_years = st.multiselect("Año", years, placeholder="Todos los años")
 
-        instruments = option_values(fuentes, "instrumento_fuente")
-        selected_instruments = st.multiselect("Instrumento", instruments, placeholder="Todos")
+        years = sorted([int(value) for value in fuentes.get("anio", pd.Series(dtype="Int64")).dropna().unique()])
+        selected_years = st.multiselect("Anio", years, placeholder="Todos los anios")
+
+        auth_types = option_values(fuentes, "tipo_autorizacion")
+        selected_auth_types = st.multiselect("Tipo de autorizacion", auth_types, placeholder="Todos")
+
+        document_types = option_values(fuentes, "tipo_documento")
+        selected_document_types = st.multiselect("Tipo de documento", document_types, placeholder="Todos")
 
         departments = sorted(split_semicolon_values(fuentes.get("departamento_normalizado", pd.Series(dtype=str))).unique().tolist())
-        selected_departments = st.multiselect("Departamento fuente", departments, placeholder="Todos")
+        selected_departments = st.multiselect("Departamento", departments, placeholder="Todos")
 
-        groups = option_values(registros, "grupo_general")
-        selected_groups = st.multiselect("Grupo general", groups, placeholder="Todos")
+        provinces = sorted(split_semicolon_values(fuentes.get("provincia_normalizada", pd.Series(dtype=str))).unique().tolist())
+        selected_provinces = st.multiselect("Provincia", provinces, placeholder="Todas")
 
-        levels = option_values(registros, "nivel_registro")
-        selected_levels = st.multiselect(
-            "Nivel de registro",
-            levels,
-            default=["fila_extraida"] if "fila_extraida" in levels else [],
-        )
+        remitentes = option_values(fuentes, "remitente")
+        selected_remitentes = st.multiselect("Remitente", remitentes, placeholder="Todos")
 
-        query = st.text_input("Buscar", placeholder="Especie, fuente, archivo o provincia")
+        query = st.text_input("Buscar", placeholder="Expediente, titulo, remitente o resumen")
 
-    f = fuentes.copy()
-    r = registros.copy()
-    h = hojas.copy()
+    filtered = fuentes.copy()
     if selected_years:
-        f = f[f["anio"].isin(selected_years)]
-        r = r[r["anio"].isin(selected_years)]
-        h = h[h["anio"].isin(selected_years)]
-    if selected_instruments:
-        f = f[f["instrumento_fuente"].isin(selected_instruments)]
+        filtered = filtered[filtered["anio"].isin(selected_years)]
+    if selected_auth_types:
+        filtered = filtered[filtered["tipo_autorizacion"].isin(selected_auth_types)]
+    if selected_document_types:
+        filtered = filtered[filtered["tipo_documento"].isin(selected_document_types)]
     if selected_departments:
-        dept_text = f.get("departamento_normalizado", pd.Series("", index=f.index)).fillna("").astype(str)
-        mask = dept_text.apply(lambda value: any(dep in [part.strip() for part in value.split(";")] for dep in selected_departments))
-        f = f[mask]
-    allowed_sources = set(f.get("id_fuente", pd.Series(dtype=str)).dropna().astype(str))
-    r = r[r["id_fuente"].astype(str).isin(allowed_sources)]
-    h = h[h["id_fuente"].astype(str).isin(allowed_sources)]
-    if selected_groups:
-        r = r[r["grupo_general"].isin(selected_groups)]
-    if selected_levels:
-        r = r[r["nivel_registro"].isin(selected_levels)]
+        filtered = filtered[contains_selected_values(filtered["departamento_normalizado"], selected_departments)]
+    if selected_provinces:
+        filtered = filtered[contains_selected_values(filtered["provincia_normalizada"], selected_provinces)]
+    if selected_remitentes:
+        filtered = filtered[filtered["remitente"].isin(selected_remitentes)]
 
-    f = text_filter(
-        f,
+    return text_filter(
+        filtered,
         query,
-        ["titulo_fuente", "autor_institucion", "departamento", "departamento_normalizado", "provincia", "nro_expediente"],
-    )
-    r = text_filter(r, query, ["nombre_cientifico", "nombre_comun", "archivo_origen", "hoja_origen", "departamento", "provincia"])
-    h = text_filter(h, query, ["archivo_excel", "hoja_excel", "encabezado_detectado"])
-    return f, r, h
-
-
-def render_patrimonio_dashboard() -> None:
-    patrimonio_paths = (str(PATRIMONIO_EXCEL_PATH), str(PATRIMONIO_2020_PATH))
-    patrimonio_signatures = tuple(patrimonio_file_signature(Path(path)) for path in patrimonio_paths)
-    base = load_patrimonio_base(patrimonio_paths, patrimonio_signatures)
-    fuentes = base.get("fuentes", pd.DataFrame())
-    hojas = base.get("hojas", pd.DataFrame())
-    registros = base.get("registros", pd.DataFrame())
-
-    st.markdown('<div class="app-kicker">SERFOR · Consulta integrada</div>', unsafe_allow_html=True)
-    st.title("Patrimonio forestal y fauna silvestre")
-    st.caption(
-        "Consulta integrada de estudios, investigaciones, Instrumentos de Gestión Ambiental y registros de especies de flora y fauna silvestre. "
-        "Permite explorar qué especies fueron reportadas, en qué fuentes aparecen y cómo se distribuyen por año, "
-        "territorio y grupo biológico."
+        ["nro_expediente", "titulo", "remitente", "departamento_original", "provincia_original", "resumen", "archivo_origen"],
     )
 
-    if fuentes.empty and registros.empty:
-        st.error("La base institucional existe, pero no contiene hojas legibles.")
-        st.stop()
 
-    fuentes_f, registros_f, hojas_f = patrimonio_filters(fuentes, registros, hojas)
-    registros_extraidos = (
-        registros_f[registros_f.get("nivel_registro", pd.Series(dtype=str)).astype(str).eq("fila_extraida")]
-        if not registros_f.empty
-        else registros_f
-    )
+def dimension_table(fuentes: pd.DataFrame, source_column: str, value_column: str) -> pd.DataFrame:
+    if fuentes.empty or source_column not in fuentes.columns:
+        return pd.DataFrame(columns=[value_column, "fuentes"])
 
-    st.divider()
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric(
-            "Especies reportadas",
-            safe_unique_count(registros_extraidos, "nombre_cientifico"),
-            help="Nombres científicos distintos identificados en la base filtrada.",
-        )
-    with c2:
-        st.metric(
-            "Reportes de especie",
-            f"{len(registros_extraidos):,}",
-            help="Ocurrencias documentadas en Excel. No equivale a número de individuos.",
-        )
-    with c3:
-        st.metric(
-            "Fuentes consultadas",
-            safe_unique_count(fuentes_f, "id_fuente"),
-            help="Estudios, Instrumentos de Gestión Ambiental o investigaciones disponibles para la consulta.",
-        )
-    c4, c5, c6 = st.columns(3)
-    with c4:
-        st.metric(
-            "Departamentos cubiertos",
-            normalized_department_count(fuentes_f),
-            help="Cobertura territorial normalizada a departamentos del Perú.",
-        )
-    with c5:
-        st.metric(
-            "Grupos biológicos",
-            safe_unique_count(registros_extraidos, "grupo_general"),
-            help="Composición general de los registros, principalmente flora y fauna.",
-        )
-    with c6:
-        st.metric(
-            "Instrumentos fuente",
-            safe_unique_count(fuentes_f, "instrumento_fuente"),
-            help="Tipo institucional de procedencia, como Instrumentos de Gestión Ambiental o autorización de investigación.",
-        )
+    rows: list[dict[str, object]] = []
+    for row in fuentes[["id_fuente", source_column]].itertuples(index=False):
+        for value in str(getattr(row, source_column) or "").split(";"):
+            clean = value.strip()
+            if clean:
+                rows.append({"id_fuente": row.id_fuente, value_column: clean})
 
-    tabs = st.tabs(["General", "Especies", "Fuentes", "Descarga"])
-
-    with tabs[0]:
-        a, b = st.columns(2)
-        with a:
-            by_year = fuentes_f.groupby("anio", dropna=False).size().reset_index(name="fuentes")
-            if not by_year.empty:
-                by_year["anio"] = by_year["anio"].astype("Int64").astype(str)
-                fig = px.bar(by_year, x="anio", y="fuentes", text="fuentes", title="Años")
-                fig.update_layout(xaxis_title="Año", yaxis_title="Fuentes", title_x=0.02)
-                fig.update_xaxes(type="category")
-                st.plotly_chart(fig, width="stretch")
-        with b:
-            by_instrument = fuentes_f.groupby("instrumento_fuente", dropna=False).size().reset_index(name="fuentes")
-            if not by_instrument.empty:
-                fig = px.pie(by_instrument, names="instrumento_fuente", values="fuentes", title="Instrumento")
-                fig.update_layout(title_x=0.02)
-                st.plotly_chart(fig, width="stretch")
-
-        a, b = st.columns(2)
-        with a:
-            by_group = registros_extraidos.groupby("grupo_general", dropna=False).size().reset_index(name="reportes")
-            if not by_group.empty:
-                fig = px.bar(by_group, x="grupo_general", y="reportes", text="reportes", title="Grupos")
-                fig.update_layout(xaxis_title="Grupo", yaxis_title="Reportes", title_x=0.02)
-                st.plotly_chart(fig, width="stretch")
-        with b:
-            by_department = normalized_department_table(fuentes_f).sort_values("fuentes")
-            if not by_department.empty:
-                fig = px.bar(by_department, y="departamento", x="fuentes", orientation="h", text="fuentes", title="Departamentos")
-                fig.update_layout(xaxis_title="Fuentes", yaxis_title="Departamento", title_x=0.02)
-                st.plotly_chart(fig, width="stretch")
-
-        st.subheader("Fuentes")
-        display_cols = [
-            "id_fuente",
-            "anio",
-            "titulo_fuente",
-            "instrumento_fuente",
-            "tipo_documento_normalizado",
-            "departamento",
-            "departamento_normalizado",
-            "provincia",
-            "archivos_excel",
-        ]
-        st.dataframe(fuentes_f[[c for c in display_cols if c in fuentes_f.columns]], width="stretch", hide_index=True)
-
-    with tabs[1]:
-        if registros_extraidos.empty:
-            st.info("Aún no hay filas extraídas para los filtros actuales. Revisa trazabilidad para hojas pendientes.")
-        else:
-            species_table = (
-                registros_extraidos.groupby(["nombre_cientifico", "nombre_comun", "grupo_general", "subgrupo", "familia"], dropna=False)
-                .agg(
-                    reportes=("conteo_reportes", "sum"),
-                    fuentes=("id_fuente", "nunique"),
-                    archivos=("archivo_origen", "nunique"),
-                    hojas=("hoja_origen", "nunique"),
-                )
-                .reset_index()
-                .sort_values(["fuentes", "reportes"], ascending=False)
-            )
-            st.dataframe(species_table, width="stretch", hide_index=True)
-
-    with tabs[2]:
-        study_table = fuentes_f.copy()
-        if not registros_extraidos.empty:
-            report_counts = (
-                registros_extraidos.groupby("id_fuente", dropna=False)
-                .agg(reportes=("conteo_reportes", "sum"), especies=("nombre_cientifico", "nunique"))
-                .reset_index()
-            )
-            study_table = study_table.merge(report_counts, on="id_fuente", how="left")
-        study_display = study_table.copy()
-        numeric_display_cols = study_display.select_dtypes(include="number").columns
-        study_display[numeric_display_cols] = study_display[numeric_display_cols].fillna(0)
-        text_display_cols = study_display.columns.difference(numeric_display_cols)
-        study_display[text_display_cols] = study_display[text_display_cols].fillna("")
-        st.dataframe(study_display, width="stretch", hide_index=True)
-
-    with tabs[3]:
-        public_source_cols = [
-            "id_fuente",
-            "anio",
-            "numeracion",
-            "nro_expediente",
-            "titulo_fuente",
-            "tipo_documento_original",
-            "tipo_documento_normalizado",
-            "instrumento_fuente",
-            "autor_institucion",
-            "departamento",
-            "departamento_normalizado",
-            "provincia",
-            "resumen_fuente",
-        ]
-        public_record_cols = [
-            "id_registro",
-            "id_fuente",
-            "anio",
-            "grupo_general",
-            "subgrupo",
-            "ambito_ecologico",
-            "clase",
-            "orden",
-            "familia",
-            "nombre_cientifico",
-            "nombre_comun",
-            "departamento",
-            "provincia",
-            "distrito",
-            "unidad_ecosistemica",
-            "estacion",
-            "temporada",
-            "metodo_registro",
-            "tipo_registro",
-            "numero_individuos_original",
-            "conteo_reportes",
-            "estado_revision",
-        ]
-        st.download_button(
-            "Descargar fuentes filtradas",
-            data=fuentes_f[[c for c in public_source_cols if c in fuentes_f.columns]].to_csv(index=False).encode("utf-8-sig"),
-            file_name="patrimonio_fuentes_filtradas.csv",
-            mime="text/csv",
-            width="stretch",
-        )
-        st.download_button(
-            "Descargar registros filtrados",
-            data=registros_f[[c for c in public_record_cols if c in registros_f.columns]].to_csv(index=False).encode("utf-8-sig"),
-            file_name="patrimonio_registros_filtrados.csv",
-            mime="text/csv",
-            width="stretch",
-        )
+    if not rows:
+        return pd.DataFrame(columns=[value_column, "fuentes"])
+    tmp = pd.DataFrame(rows).drop_duplicates()
+    return tmp.groupby(value_column, dropna=False)["id_fuente"].nunique().reset_index(name="fuentes")
 
 
-if PATRIMONIO_EXCEL_PATH.exists():
-    render_patrimonio_dashboard()
-    st.stop()
+def to_excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        for sheet_name, df in sheets.items():
+            safe_name = sheet_name[:31]
+            df.to_excel(writer, sheet_name=safe_name, index=False)
+            workbook = writer.book
+            worksheet = writer.sheets[safe_name]
+            header_fmt = workbook.add_format({"bold": True, "bg_color": "#0F766E", "font_color": "#FFFFFF"})
+            for col_num, value in enumerate(df.columns):
+                worksheet.write(0, col_num, value, header_fmt)
+                width = min(max(len(str(value)) + 4, 12), 46)
+                worksheet.set_column(col_num, col_num, width)
+            worksheet.autofilter(0, 0, max(len(df), 1), max(len(df.columns) - 1, 0))
+            worksheet.freeze_panes(1, 0)
+    return output.getvalue()
+
+
+def render_bar(df: pd.DataFrame, x: str, y: str, title: str, orientation: str = "v") -> None:
+    if df.empty:
+        st.info("No hay datos para los filtros actuales.")
+        return
+    fig = px.bar(df, x=x, y=y, text=y, title=title, orientation=orientation)
+    fig.update_layout(title_x=0.02, xaxis_title=None, yaxis_title=None)
+    st.plotly_chart(fig, width="stretch")
+
+
+base = load_dashboard_base(str(DATA_PATH), file_signature(DATA_PATH))
+fuentes = base["fuentes"]
+indice = base["indice"]
+calidad = base["calidad"]
 
 st.markdown('<div class="app-kicker">SERFOR · Consulta integrada</div>', unsafe_allow_html=True)
-st.title("Información de Patrimonio forestal - SERFOR")
-st.caption("Consulta y analiza registros consolidados de fauna reportados en informes mineros.")
+st.title("Fuentes, expedientes y autorizaciones")
+st.caption(
+    "Dashboard construido desde la base consolidada de estudios, informes y autorizaciones. "
+    "La informacion anterior de especies fue reemplazada por una organizacion propia para esta nueva base."
+)
 
-data, _ = load_data(str(DATA_DIR), SHEET_NAME, data_files_signature(str(DATA_DIR)))
-
-if data.empty:
-    st.error(f"No se pudo cargar informacion. Verifica que exista `data/` y la hoja `{SHEET_NAME}`.")
+if fuentes.empty:
+    st.error(f"No se encontro una base legible en `{DATA_PATH}`.")
     st.stop()
 
-filtered = build_filters(data)
+filtered = build_filters(fuentes)
 
 st.divider()
-kpi1, kpi2, kpi3 = st.columns(3)
-kpi1.metric("Anios", safe_unique_count(filtered, "anio"))
-kpi2.metric("Estudios", safe_unique_count(filtered, "id_estudio_anual"))
-kpi3.metric("Registros", f"{len(filtered):,}")
-kpi4, kpi5, kpi6 = st.columns(3)
-kpi4.metric("Taxones", safe_unique_count(filtered, "nombre_cientifico"))
-kpi5.metric("Familias", safe_unique_count(filtered, "familia"))
-kpi6.metric("Con coordenadas", f"{int((filtered['este_fuente_original'].notna() & filtered['norte_fuente_original'].notna()).sum()):,}")
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("Fuentes", f"{len(filtered):,}")
+k2.metric("Expedientes", f"{safe_unique_count(filtered, 'nro_expediente'):,}")
+k3.metric("Remitentes", f"{safe_unique_count(filtered, 'remitente'):,}")
+k4.metric("Anios", f"{safe_unique_count(filtered, 'anio'):,}")
+
+k5, k6, k7, k8 = st.columns(4)
+k5.metric("Departamentos", f"{exploded_count(filtered, 'departamento_normalizado'):,}")
+k6.metric("Provincias", f"{exploded_count(filtered, 'provincia_normalizada'):,}")
+k7.metric("Tipos de documento", f"{safe_unique_count(filtered, 'tipo_documento'):,}")
+k8.metric("Archivos origen", f"{safe_unique_count(filtered, 'archivo_origen'):,}")
 
 if filtered.empty:
-    st.warning("No hay registros para los filtros seleccionados. Ajusta los filtros del panel lateral.")
+    st.warning("No hay registros para los filtros seleccionados.")
+    st.stop()
 
-tabs = st.tabs(["Dashboard", "Estudios", "Especies", "Mapa", "Descarga"])
+tabs = st.tabs(["Resumen", "Fuentes", "Territorio", "Trazabilidad", "Descarga"])
 
 with tabs[0]:
-    st.subheader("Resumen general")
-    c1, c2 = st.columns(2)
-    with c1:
-        by_year = filtered.groupby("anio", dropna=False).size().reset_index(name="registros").sort_values("anio")
-        if by_year.empty:
-            st.info("No hay registros para los filtros actuales.")
-        else:
-            fig = px.bar(by_year, x="anio", y="registros", text="registros", title="Registros por año")
-            fig.update_layout(xaxis_title="Año", yaxis_title="Registros", title_x=0.02)
-            st.plotly_chart(fig, width="stretch")
-    with c2:
-        by_group = filtered.groupby("grupo_biologico", dropna=False).size().reset_index(name="registros")
-        if by_group.empty:
-            st.info("No hay grupos para los filtros actuales.")
-        else:
-            fig = px.pie(
-                by_group,
-                names="grupo_biologico",
-                values="registros",
-                title="Distribución por grupo biológico",
-                color_discrete_sequence=COLOR_SEQUENCE,
-            )
-            fig.update_layout(title_x=0.02)
-            st.plotly_chart(fig, width="stretch")
-
-    c3, c4 = st.columns(2)
-    with c3:
-        by_department = (
-            filtered.groupby("departamento_estudio", dropna=False)
-            .size()
-            .reset_index(name="registros")
-            .sort_values("registros", ascending=True)
-        )
-        if not by_department.empty:
-            fig = px.bar(
-                by_department,
-                y="departamento_estudio",
-                x="registros",
-                orientation="h",
-                text="registros",
-                title="Registros por departamento",
-            )
-            fig.update_layout(xaxis_title="Registros", yaxis_title="Departamento", title_x=0.02)
-            st.plotly_chart(fig, width="stretch")
-    with c4:
-        top_studies = (
-            filtered.groupby(["codigo_estudio_limpio", "titulo_estudio"], dropna=False)["nombre_cientifico"]
-            .nunique()
-            .reset_index(name="taxones")
-            .sort_values("taxones", ascending=True)
-            .tail(15)
-        )
-        if not top_studies.empty:
-            top_studies["estudio"] = top_studies["codigo_estudio_limpio"] + " | " + top_studies["titulo_estudio"].str.slice(0, 60)
-            fig = px.bar(top_studies, y="estudio", x="taxones", orientation="h", text="taxones", title="Taxones por estudio")
-            fig.update_layout(xaxis_title="Taxones", yaxis_title="Estudio", title_x=0.02)
-            st.plotly_chart(fig, width="stretch")
-
-    st.subheader("Vista consolidada filtrada")
-    display_cols = [
-        "anio",
-        "codigo_estudio_limpio",
-        "titulo_estudio",
-        "departamento_estudio",
-        "provincia_estudio",
-        "grupo_biologico",
-        "familia",
-        "nombre_cientifico",
-        "nombre_comun",
-        "estacion_fuente_original",
-        "este_fuente_original",
-        "norte_fuente_original",
-        "zona_utm_fuente_original",
-        "tipo_asignacion",
-        "estado_revision",
-    ]
-    st.dataframe(filtered[[c for c in display_cols if c in filtered.columns]], width="stretch", hide_index=True)
-
-with tabs[1]:
-    st.subheader("Explorador de estudios")
-    study_table = (
-        filtered.groupby(
-            [
-                "anio",
-                "id_estudio_anual",
-                "codigo_estudio_limpio",
-                "titulo_estudio",
-                "departamento_estudio",
-                "provincia_estudio",
-                "tipo_documento",
-                "sector_asociado",
-                "fuente_archivo_anual",
-            ],
-            dropna=False,
-        )
-        .agg(
-            registros=("id_registro_anual", "count"),
-            taxones=("nombre_cientifico", "nunique"),
-            familias=("familia", "nunique"),
-            estaciones=("estacion_fuente_original", "nunique"),
-        )
-        .reset_index()
-        .sort_values(["anio", "codigo_estudio_limpio"])
-    )
-    st.dataframe(study_table, width="stretch", hide_index=True)
-
-    if not study_table.empty:
-        study_id = st.selectbox(
-            "Detalle de estudio",
-            study_table["id_estudio_anual"].tolist(),
-            format_func=lambda x: study_table.loc[study_table["id_estudio_anual"] == x, "codigo_estudio_limpio"].iloc[0]
-            + " | "
-            + study_table.loc[study_table["id_estudio_anual"] == x, "titulo_estudio"].iloc[0][:90],
-        )
-        study_df = filtered[filtered["id_estudio_anual"] == study_id]
-        s1, s2, s3, s4 = st.columns(4)
-        s1.metric("Registros", len(study_df))
-        s2.metric("Taxones", safe_unique_count(study_df, "nombre_cientifico"))
-        s3.metric("Familias", safe_unique_count(study_df, "familia"))
-        s4.metric("Estaciones", safe_unique_count(study_df, "estacion_fuente_original"))
-
-        cols = [
-            "grupo_biologico",
-            "familia",
-            "orden",
-            "nombre_cientifico",
-            "nombre_comun",
-            "estacion_fuente_original",
-            "este_fuente_original",
-            "norte_fuente_original",
-            "zona_utm_fuente_original",
-            "tipo_asignacion",
-        ]
-        st.dataframe(study_df[[c for c in cols if c in study_df.columns]], width="stretch", hide_index=True)
-
-with tabs[2]:
-    st.subheader("Explorador de especies")
-    species_table = (
-        filtered.groupby(["nombre_cientifico", "nombre_comun", "grupo_biologico", "familia", "orden"], dropna=False)
-        .agg(
-            registros=("id_registro_anual", "count"),
-            estudios=("id_estudio_anual", "nunique"),
-            departamentos=("departamento_estudio", "nunique"),
-            estaciones=("estacion_fuente_original", "nunique"),
-        )
-        .reset_index()
-        .sort_values(["estudios", "registros"], ascending=False)
-    )
-
-    c1, c2 = st.columns(2)
-    with c1:
-        top_species = species_table.head(20).sort_values("registros", ascending=True)
-        if not top_species.empty:
-            fig = px.bar(
-                top_species,
-                y="nombre_cientifico",
-                x="registros",
-                color="grupo_biologico",
-                orientation="h",
-                text="registros",
-                title="Taxones con más registros",
-                color_discrete_sequence=COLOR_SEQUENCE,
-            )
-            fig.update_layout(xaxis_title="Registros", yaxis_title="Taxon", title_x=0.02)
-            st.plotly_chart(fig, width="stretch")
-    with c2:
-        families = (
-            filtered.groupby("familia")["nombre_cientifico"]
-            .nunique()
-            .reset_index(name="taxones")
-            .sort_values("taxones", ascending=True)
-            .tail(15)
-        )
-        if not families.empty:
-            fig = px.bar(families, y="familia", x="taxones", orientation="h", text="taxones", title="Taxones por familia")
-            fig.update_layout(xaxis_title="Taxones", yaxis_title="Familia", title_x=0.02)
-            st.plotly_chart(fig, width="stretch")
-
-    st.dataframe(species_table, width="stretch", hide_index=True)
-
-with tabs[3]:
-    st.subheader("Mapa de registros")
-    if not GEOJSON_PATH.exists():
-        st.info("No se encontro la base departamental para construir el mapa.")
-    else:
-        departments_geojson = load_departments_geojson(str(GEOJSON_PATH))
-        fig, coord_df = build_department_map(filtered, departments_geojson)
+    a, b = st.columns(2)
+    with a:
+        by_year = filtered.groupby("anio", dropna=False).size().reset_index(name="fuentes")
+        by_year["anio"] = by_year["anio"].astype("Int64").astype(str)
+        render_bar(by_year, "anio", "fuentes", "Fuentes por anio")
+    with b:
+        by_auth = filtered.groupby("tipo_autorizacion", dropna=False).size().reset_index(name="fuentes")
+        fig = px.pie(by_auth, names="tipo_autorizacion", values="fuentes", title="Tipo de autorizacion")
+        fig.update_layout(title_x=0.02)
         st.plotly_chart(fig, width="stretch")
 
-        if coord_df.empty:
-            st.info("No hay registros georreferenciables para los filtros actuales.")
-        else:
-            coord_cols = [
-                "anio",
-                "codigo_estudio_limpio",
-                "grupo_biologico",
-                "nombre_cientifico",
-                "nombre_comun",
-                "estacion_fuente_original",
-                "departamento_estudio",
-                "provincia_estudio",
-                "latitud",
-                "longitud",
-                "zona_utm_fuente_original",
-                "fuente_base_especies",
-                "pagina_fuente_original",
-            ]
-            st.dataframe(coord_df[[c for c in coord_cols if c in coord_df.columns]], width="stretch", hide_index=True)
+    a, b = st.columns(2)
+    with a:
+        by_doc = (
+            filtered.groupby("tipo_documento", dropna=False)
+            .size()
+            .reset_index(name="fuentes")
+            .sort_values("fuentes", ascending=False)
+        )
+        render_bar(by_doc, "tipo_documento", "fuentes", "Tipo de documento")
+    with b:
+        by_source_file = (
+            filtered.groupby("archivo_origen", dropna=False)
+            .size()
+            .reset_index(name="fuentes")
+            .sort_values("fuentes")
+        )
+        render_bar(by_source_file, "fuentes", "archivo_origen", "Archivos origen", orientation="h")
+
+with tabs[1]:
+    st.subheader("Explorador de fuentes")
+    display_cols = [
+        "id_fuente",
+        "anio",
+        "numeracion",
+        "nro_expediente",
+        "titulo",
+        "tipo_documento",
+        "tipo_autorizacion",
+        "remitente",
+        "departamento_normalizado",
+        "provincia_normalizada",
+        "resumen",
+        "archivo_origen",
+        "fila_origen",
+    ]
+    st.dataframe(filtered[[col for col in display_cols if col in filtered.columns]], width="stretch", hide_index=True)
+
+with tabs[2]:
+    a, b = st.columns(2)
+    with a:
+        by_department = dimension_table(filtered, "departamento_normalizado", "departamento").sort_values("fuentes")
+        render_bar(by_department.tail(25), "fuentes", "departamento", "Departamentos", orientation="h")
+    with b:
+        by_province = dimension_table(filtered, "provincia_normalizada", "provincia").sort_values("fuentes")
+        render_bar(by_province.tail(25), "fuentes", "provincia", "Provincias principales", orientation="h")
+
+    territory_cols = ["id_fuente", "anio", "departamento_normalizado", "provincia_normalizada", "titulo", "nro_expediente"]
+    st.dataframe(filtered[[col for col in territory_cols if col in filtered.columns]], width="stretch", hide_index=True)
+
+with tabs[3]:
+    st.subheader("Indice de origen")
+    if indice.empty:
+        st.info("La base final no contiene hoja de indice de origen.")
+    else:
+        st.dataframe(indice, width="stretch", hide_index=True)
+
+    st.subheader("Control de calidad")
+    if calidad.empty:
+        st.info("La base final no contiene control de calidad.")
+    else:
+        st.dataframe(calidad, width="stretch", hide_index=True)
 
 with tabs[4]:
     st.subheader("Descarga")
-    download_cols = [col for col in filtered.columns if not col.startswith("unnamed")]
-    filtered_download = filtered[download_cols].copy()
-
+    filtered_departments = dimension_table(filtered, "departamento_normalizado", "departamento")
+    filtered_provinces = dimension_table(filtered, "provincia_normalizada", "provincia")
+    workbook = to_excel_bytes(
+        {
+            "fuentes_filtradas": filtered,
+            "departamentos": filtered_departments,
+            "provincias": filtered_provinces,
+        }
+    )
     st.download_button(
-        "Descargar filtrado en CSV",
-        data=filtered_download.to_csv(index=False).encode("utf-8-sig"),
-        file_name="fauna_filtrada_streamlit.csv",
-        mime="text/csv",
+        "Descargar Excel filtrado",
+        data=workbook,
+        file_name="fuentes_autorizaciones_filtradas.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         width="stretch",
     )
     st.download_button(
-        "Descargar filtrado en Excel",
-        data=to_excel_bytes(filtered_download),
-        file_name="fauna_filtrada_streamlit.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Descargar CSV filtrado",
+        data=filtered.to_csv(index=False).encode("utf-8-sig"),
+        file_name="fuentes_autorizaciones_filtradas.csv",
+        mime="text/csv",
         width="stretch",
     )
