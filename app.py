@@ -19,17 +19,42 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_PATH = BASE_DIR / "data" / "dashboard_fuentes" / "base_fuentes_autorizaciones.xlsx"
 
 COLOR_SEQUENCE = [
-    "#0F766E",
-    "#D97706",
-    "#2563EB",
-    "#7C3AED",
-    "#DC2626",
-    "#0891B2",
-    "#65A30D",
-    "#DB2777",
+    "#176B55",
+    "#D89B32",
+    "#8E5A3C",
+    "#4C8FA3",
+    "#843E52",
+    "#7B8E57",
 ]
 px.defaults.template = "plotly_white"
 px.defaults.color_discrete_sequence = COLOR_SEQUENCE
+
+st.markdown(
+    """
+    <style>
+      :root { --forest:#176B55; --sand:#F3EFE6; --ink:#17352D; }
+      .stApp { background:linear-gradient(180deg,#F8FAF7 0,#FFFFFF 22rem); color:#17352D; }
+      [data-testid="stSidebar"] { background:#123E34; }
+      [data-testid="stSidebar"] * { color:#F7F2E8; }
+      [data-testid="stMetric"] {
+        background:white; border:1px solid #DDE7E1; border-radius:14px;
+        padding:1rem 1.1rem; box-shadow:0 4px 18px rgba(23,53,45,.06);
+      }
+      .hero { padding:1.5rem 1.7rem; border-radius:20px; color:white;
+        background:linear-gradient(120deg,#123E34,#24765F); margin-bottom:1.2rem; }
+      .hero h1 { margin:0; font-size:2rem; letter-spacing:0; }
+      .hero p { margin:.45rem 0 0; color:#E4F0EA; }
+      .eyebrow { color:#DDB46A; font-size:.78rem; letter-spacing:.12em;
+        text-transform:uppercase; font-weight:700; }
+      .note { border-left:4px solid #D89B32; background:#FFF9ED;
+        padding:.75rem 1rem; border-radius:0 10px 10px 0; }
+      div[data-testid="stPlotlyChart"] { background:white; border-radius:14px; }
+      div[data-testid="stDataFrame"] { border:1px solid #DDE7E1; border-radius:14px; }
+      #MainMenu, footer { visibility:hidden; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 def file_signature(path: Path) -> tuple[str, int, int]:
@@ -128,7 +153,10 @@ def contains_selected_values(series: pd.Series, selected: list[str]) -> pd.Serie
 
 def build_filters(fuentes: pd.DataFrame) -> pd.DataFrame:
     with st.sidebar:
-        st.header("Filtros")
+        st.markdown("## 🌿 SERFOR")
+        st.caption("Fuentes · Expedientes · Autorizaciones")
+        st.divider()
+        st.markdown("#### Filtros globales")
 
         years = sorted([int(value) for value in fuentes.get("anio", pd.Series(dtype="Int64")).dropna().unique()])
         selected_years = st.multiselect("Anio", years, placeholder="Todos los anios")
@@ -206,13 +234,35 @@ def to_excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
     return output.getvalue()
 
 
+def hero(title: str, subtitle: str) -> None:
+    st.markdown(
+        f'<div class="hero"><div class="eyebrow">SERFOR · Consulta integrada</div>'
+        f"<h1>{title}</h1><p>{subtitle}</p></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def style_figure(fig, height: int = 420):
+    fig.update_layout(
+        height=height,
+        margin={"l": 20, "r": 20, "t": 55, "b": 20},
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        font={"family": "Arial", "color": "#17352D"},
+        legend_title_text="",
+    )
+    fig.update_xaxes(gridcolor="#E8EEE9")
+    fig.update_yaxes(gridcolor="#E8EEE9")
+    return fig
+
+
 def render_bar(df: pd.DataFrame, x: str, y: str, title: str, orientation: str = "v") -> None:
     if df.empty:
         st.info("No hay datos para los filtros actuales.")
         return
     fig = px.bar(df, x=x, y=y, text=y, title=title, orientation=orientation)
     fig.update_layout(title_x=0.02, xaxis_title=None, yaxis_title=None)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(style_figure(fig), width="stretch")
 
 
 base = load_dashboard_base(str(DATA_PATH), file_signature(DATA_PATH))
@@ -220,11 +270,10 @@ fuentes = base["fuentes"]
 indice = base["indice"]
 calidad = base["calidad"]
 
-st.markdown('<div class="app-kicker">SERFOR · Consulta integrada</div>', unsafe_allow_html=True)
-st.title("Fuentes, expedientes y autorizaciones")
-st.caption(
+hero(
+    "Fuentes, expedientes y autorizaciones",
     "Dashboard construido desde la base consolidada de estudios, informes y autorizaciones. "
-    "La informacion anterior de especies fue reemplazada por una organizacion propia para esta nueva base."
+    "La informacion anterior de especies fue reemplazada por una organizacion propia para esta nueva base.",
 )
 
 if fuentes.empty:
@@ -262,7 +311,7 @@ with tabs[0]:
         by_auth = filtered.groupby("tipo_autorizacion", dropna=False).size().reset_index(name="fuentes")
         fig = px.pie(by_auth, names="tipo_autorizacion", values="fuentes", title="Tipo de autorizacion")
         fig.update_layout(title_x=0.02)
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(style_figure(fig), width="stretch")
 
     a, b = st.columns(2)
     with a:
